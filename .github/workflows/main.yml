@@ -30,7 +30,7 @@ jobs:
         username: ${{ secrets.USERNAME }}
         password: ${{ secrets.PASSWORD }}
         port: ${{ secrets.PORT }}
-        source: "build,storage,package.json"
+        source: "build,storage,config.json,package.json"
         target: "manga-server-startup"
     - name: Prepare server
       uses: appleboy/ssh-action@master
