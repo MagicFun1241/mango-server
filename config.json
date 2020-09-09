@@ -4,7 +4,7 @@
       "host": "https://manga.mfsoftware.site"
     },
     "development": {
-      "host": "http://localhost:3000"
+      "host": "http://10.0.2.2:3000"
     }
   }
 }

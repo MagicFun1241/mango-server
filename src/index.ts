@@ -26,4 +26,4 @@ app.use(bodyParser.json());
 app.use("/storage", serveStatic(path.join(__dirname, '../storage')));
 app.use("/api", apiRouter);
 
-app.listen(3000);
+app.listen(3200);

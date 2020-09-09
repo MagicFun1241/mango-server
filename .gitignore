@@ -1,5 +1,9 @@
 node_modules/
 build/
 
+storage/manga/
+storage/preview/
+storage/photo/
+
 # NPM
 package-lock.json

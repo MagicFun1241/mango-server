@@ -7,7 +7,7 @@ import {Router} from "express";
 
 import StreamZip = require("node-stream-zip");
 import Volume from "../../../schemas/volume";
-import Manga from "../../../schemas/manga";
+import Manga, {MangaState} from "../../../schemas/manga";
 import {
     Role
 } from "../../../schemas/user";
@@ -17,12 +17,13 @@ import {
     query
 } from "express-validator";
 
+import uploader from "../../../modules/uploader";
+
 import validationMiddleware from "../../../modules/validation";
 import jwtMiddlewareBuilder from "../../../modules/jwt";
 import roleMiddleware from "../../../modules/role";
 
-import uploader from "../../../modules/uploader";
-import {BadRequestError} from "ts-http-errors/dist";
+import {BadRequestError} from "ts-http-errors";
 import Storage from "../../../classes/storage";
 
 const mangaApi = (router: Router) => {
@@ -32,6 +33,7 @@ const mangaApi = (router: Router) => {
         Role.Creator
     ]), query("name").isString().exists(),
         query("description").isString().exists(),
+        query("releaseDate").isString().optional(),
         validationMiddleware,
         uploader.single("preview"),
         async (req, res) => {
@@ -63,7 +65,7 @@ const mangaApi = (router: Router) => {
         }
     });
 
-    router.get("/mangas/:id",
+    router.get("/manga/:id",
         param("id").isString().isMongoId().exists(),
         validationMiddleware,
         async (req, res) => {
@@ -75,13 +77,17 @@ const mangaApi = (router: Router) => {
 
             res.send({
                 name: manga.name,
+                status: manga.state,
+                rating: Math.round(manga.rating.sum),
+                reviewsCount: manga.rating.reviews.length,
+                releaseDate: manga.releaseDate,
                 preview: Storage.getPreview(manga.preview),
                 description: manga.description
             });
         });
     });
 
-    router.post("/mangas/:mangaId/volumes/:volume/chapters/:chapter",
+    router.post("/manga/:mangaId/volumes/:volume/chapters/:chapter",
         jwtMiddlewareBuilder(),
         roleMiddleware([
             Role.Administrator,
@@ -213,7 +219,7 @@ const mangaApi = (router: Router) => {
             });
         });
 
-    router.get("/mangas/:mangaId/volumes/:volume/chapters/:chapter",
+    router.get("/manga/:mangaId/volumes/:volume/chapters/:chapter",
         param("mangaId").isString().isMongoId().exists(),
         param("volume").isNumeric().toInt(),
         param("chapter").isNumeric().toInt(),
@@ -250,7 +256,7 @@ const mangaApi = (router: Router) => {
         });
     });
 
-    router.get("/mangas/:mangaId/volumes",
+    router.get("/manga/:mangaId/volumes",
         param("mangaId").isString().isMongoId().exists(),
         async (req, res) => {
             Manga.findById(req.params.mangaId).then(manga => {
@@ -277,7 +283,7 @@ const mangaApi = (router: Router) => {
             });
         });
 
-    router.get("/mangas/:mangaId/volumes/:volume/chapters",
+    router.get("/manga/:mangaId/volumes/:volume/chapters",
         param("mangaId").isString().isMongoId().exists(),
         param("volume").isNumeric().toInt(),
         async (req, res) => {
@@ -332,6 +338,31 @@ const mangaApi = (router: Router) => {
             res.send(result);
         });
     });
+
+    router.get("/manga/state/ongoing",
+        query("count").isNumeric().toInt().optional(),
+        validationMiddleware,
+        async (req, res) => {
+            const count = req.query.count || 3;
+
+            Manga.find({
+                state: MangaState.Ongoing
+            }).limit(count).then(list => {
+                let result: Array<{
+                    id: string;
+                    name: string;
+                    preview: string;
+                }> = [];
+
+                list.forEach(e => result.push({
+                    id: e._id,
+                    name: e.name,
+                    preview: Storage.getPreview(e.preview)
+                }));
+
+                res.send(result);
+            });
+        });
 };
 
 export default mangaApi;
