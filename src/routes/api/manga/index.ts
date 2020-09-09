@@ -234,7 +234,7 @@ const mangaApi = (router: Router) => {
                 number: req.params.volume,
                 mangaId: manga._id
             }).then(vol => {
-                if (vol == null) { // TODO: Добавит вывод ошибок
+                if (vol == null) { // TODO: Добавит вывод ошибок)
                     return;
                 }
 
