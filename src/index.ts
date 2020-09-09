@@ -9,7 +9,7 @@ import * as serveStatic from "serve-static";
 
 import apiRouter from "./routes/api";
 
-mongoose.connect('mongodb://localhost:27017/manga', {
+mongoose.connect('mongodb://manga:6~6zVDh]<jM-B5K?@localhost:27017/manga', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     useCreateIndex: true
