@@ -7,11 +7,12 @@ import {BadRequestError} from "ts-http-errors";
 import Hash from "../../../classes/hash";
 import User from "../../../schemas/user";
 
+import Storage from "../../../classes/storage";
+
 import {body} from "express-validator";
 
 import jwtMiddlewareBuilder, {JWT_SECRET, JwtRequest} from "../../../modules/jwt";
 import validationMiddleware from "../../../modules/validation";
-import Storage from "../../../classes/storage";
 
 const usersApi = (router: Router) => {
     router.post("/users",
@@ -109,6 +110,14 @@ const usersApi = (router: Router) => {
             });
         });
     });
+
+    router.get("/users/me/lists",
+        jwtMiddlewareBuilder(),
+        async (req: JwtRequest, res) => {
+            User.findById(req.user.userId).then(user => {
+                res.send(user.lists);
+            });
+        });
 }
 
 export default usersApi;

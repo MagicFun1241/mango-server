@@ -5,11 +5,13 @@ import * as mongoose from "mongoose";
 import * as cors from "cors";
 import * as helmet from "helmet";
 import * as bodyParser from "body-parser";
+import * as morganBody from 'morgan-body';
 import * as serveStatic from "serve-static";
 
 import apiRouter from "./routes/api";
+import config, {isDevelopment} from "./classes/config";
 
-mongoose.connect('mongodb://manga:6~6zVDh]<jM-B5K?@localhost:27017/manga', {
+mongoose.connect(isDevelopment ? config.env.development.mongodbUrl : config.env.production.mongodbUrl, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     useCreateIndex: true
@@ -18,6 +20,10 @@ mongoose.connect('mongodb://manga:6~6zVDh]<jM-B5K?@localhost:27017/manga', {
 });
 
 const app = express();
+
+if (isDevelopment) {
+    morganBody(app);
+}
 
 app.use(cors());
 app.use(helmet());

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 interface Environment {
+    mongodbUrl: string;
     host: string;
 }
 

@@ -7,7 +7,7 @@ import {Router} from "express";
 
 import StreamZip = require("node-stream-zip");
 import Volume from "../../../schemas/volume";
-import Manga, {MangaState} from "../../../schemas/manga";
+import Manga, {MangaState, validateGenres} from "../../../schemas/manga";
 import {
     Role
 } from "../../../schemas/user";
@@ -33,10 +33,18 @@ const mangaApi = (router: Router) => {
         Role.Creator
     ]), query("name").isString().exists(),
         query("description").isString().exists(),
+        query("explicit").isBoolean().exists(),
+        query("genres").isArray().optional(),
         query("releaseDate").isString().optional(),
         validationMiddleware,
         uploader.single("preview"),
         async (req, res) => {
+        if (req.query.genres != null) {
+            if (!validateGenres(req.query.genres)) {
+                return res.status(400).send(new BadRequestError("Invalid genres"));
+            }
+        }
+
         if (req.file != null) {
             sharp(fs.readFileSync(req.file.path)).jpeg().toFile(path.join(process.cwd(), `/storage/preview/${req.file.filename}.jpg`)).then(() => {
                 fs.unlinkSync(req.file.path);
@@ -44,7 +52,10 @@ const mangaApi = (router: Router) => {
                 new Manga({
                     name: req.query.name,
                     preview: req.file.filename,
-                    description: req.query.description
+                    explicit: req.query.explicit,
+                    description: req.query.description,
+                    genres: req.query.genres || undefined,
+                    releaseDate: req.query.releaseDate || undefined
                 }).save().then(manga => {
                     res.send({
                         id: manga._id,
@@ -55,7 +66,10 @@ const mangaApi = (router: Router) => {
         } else {
             new Manga({
                 name: req.query.name,
-                description: req.query.description
+                explicit: req.query.explicit,
+                description: req.query.description,
+                genres: req.query.genres || undefined,
+                releaseDate: req.query.releaseDate || undefined
             }).save().then(manga => {
                 res.send({
                     id: manga._id,
@@ -78,6 +92,7 @@ const mangaApi = (router: Router) => {
             res.send({
                 name: manga.name,
                 status: manga.state,
+                explicit: manga.explicit,
                 rating: Math.round(manga.rating.sum),
                 reviewsCount: manga.rating.reviews.length,
                 releaseDate: manga.releaseDate,
@@ -313,13 +328,16 @@ const mangaApi = (router: Router) => {
 
     router.get("/manga/search",
         query("count").isNumeric().toInt().optional(),
+        query("explicit").isBoolean().optional(),
         query("q").isString().exists(),
         validationMiddleware,
         async (req, res) => {
         const count = req.query.count || 5;
+        const explicit = req.query.explicit || false;
 
         Manga.find({
-            $text: { $search: req.query.q }
+            $text: { $search: req.query.q },
+            explicit: explicit
         }).limit(count).then(list => {
             let result: Array<{
                 id: string;

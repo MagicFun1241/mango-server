@@ -33,7 +33,17 @@ const UserSchema = createSchema({
     role: Type.number({ default: Role.User }),
     photo: Type.string({ default: "none" }),
 
-    watchList: Type.array({ default: [] }).of(Type.objectId()),
+    lists: Type.object({
+        default: {
+            favorite: [],
+            reading: [],
+            readed: []
+        }
+    }).of({
+        favorite: Type.array().of(Type.objectId()),
+        reading: Type.array().of(Type.objectId()),
+        readed: Type.array().of(Type.objectId())
+    }),
     subscribers: Type.array({ default: [] }).of(Type.objectId())
 });
 

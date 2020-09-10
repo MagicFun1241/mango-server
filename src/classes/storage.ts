@@ -5,6 +5,10 @@ export default class Storage {
         return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/preview/${id}.jpg`;
     }
 
+    static getEmptyPreview() {
+        return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/preview/empty.jpg`;
+    }
+
     static getPhoto(id: string) {
         return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/photo/${id}.jpg`;
     }
