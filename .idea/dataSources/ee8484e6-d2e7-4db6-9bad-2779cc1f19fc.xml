@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSource name="MongoDB - @localhost">
+  <database-model serializer="dbm" dbms="MONGO" family-id="MONGO" format-version="4.19">
+    <root id="1">
+      <ServerVersion>4.2.7</ServerVersion>
+    </root>
+    <schema id="2" parent="1" name="admin"/>
+    <schema id="3" parent="1" name="config"/>
+    <schema id="4" parent="1" name="distort"/>
+    <schema id="5" parent="1" name="local"/>
+    <schema id="6" parent="1" name="manga"/>
+    <table id="7" parent="6" name="mangas"/>
+    <table id="8" parent="6" name="users"/>
+    <table id="9" parent="6" name="volumes"/>
+    <column id="10" parent="7" name="_id">
+      <DataType>ObjectId(0)|12s</DataType>
+    </column>
+    <column id="11" parent="7" name="__v">
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="12" parent="7" name="description">
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="13" parent="7" name="name">
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="14" parent="7" name="preview">
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="15" parent="8" name="_id">
+      <DataType>ObjectId(0)|12s</DataType>
+    </column>
+    <column id="16" parent="8" name="__v">
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="17" parent="8" name="email">
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="18" parent="8" name="password">
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="19" parent="8" name="role">
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="20" parent="8" name="sessionId">
+      <Position>1</Position>
+      <DataType>Double(0)|8s</DataType>
+    </column>
+    <column id="21" parent="8" name="subscribers">
+      <Position>2</Position>
+      <DataType>list(0)|4999545s</DataType>
+    </column>
+    <column id="22" parent="8" name="userName">
+      <Position>3</Position>
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="23" parent="8" name="watchList">
+      <Position>4</Position>
+      <DataType>list(0)|4999545s</DataType>
+    </column>
+    <column id="24" parent="9" name="_id">
+      <DataType>ObjectId(0)|12s</DataType>
+    </column>
+    <column id="25" parent="9" name="chapters">
+      <DataType>list(0)|4999545s</DataType>
+    </column>
+    <column id="26" parent="9" name="mangaId">
+      <DataType>ObjectId(0)|12s</DataType>
+    </column>
+    <column id="27" parent="9" name="number">
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="28" parent="9" name="__v">
+      <Position>1</Position>
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="29" parent="9" name="chapters._id">
+      <Position>1</Position>
+      <DataType>ObjectId(0)|12s</DataType>
+    </column>
+    <column id="30" parent="9" name="chapters.name">
+      <Position>2</Position>
+      <DataType>String(0)|12s</DataType>
+    </column>
+    <column id="31" parent="9" name="chapters.number">
+      <Position>3</Position>
+      <DataType>Integer|4s</DataType>
+    </column>
+    <column id="32" parent="9" name="chapters.pages">
+      <Position>4</Position>
+      <DataType>array(0)|2003s</DataType>
+    </column>
+  </database-model>
+</dataSource>
