@@ -1,7 +1,7 @@
 {
   "env": {
     "production": {
-      "mongodbUrl": "mongodb://localhost:27017/manga",
+      "mongodbUrl": "mongodb://admin:!NikitaGanzikov130520031241@localhost:27017/manga",
       "host": "https://manga.mfsoftware.site"
     },
     "development": {
