@@ -12,6 +12,8 @@ import apiRouter from "./routes/api";
 import config, {isDevelopment} from "./classes/config";
 
 mongoose.connect(isDevelopment ? config.env.development.mongodbUrl : config.env.production.mongodbUrl, {
+    user: "manga",
+    pass: "6~6zVDh]<jM-B5K?",
     useNewUrlParser: true,
     useUnifiedTopology: true,
     useCreateIndex: true
