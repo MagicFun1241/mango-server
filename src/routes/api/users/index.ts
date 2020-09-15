@@ -83,7 +83,7 @@ const usersApi = (router: Router) => {
             password: Hash.create(req.body.password)
         }).then(user => {
             if (user == null) {
-                return;
+                return res.status(400).send(new BadRequestError("Invalid user data"));
             }
 
             res.send({

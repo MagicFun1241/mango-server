@@ -8,16 +8,22 @@ export enum MangaState {
 
 export enum MangaGenre {
     Sport,
-    Yuri,
-    Garem,
+    Hentai,
+    Harem,
     Thriller,
-    Mecha
+    Mecha,
+    School,
+    Drama
 }
 
 const Genres = [
     MangaGenre.Sport,
-    MangaGenre.Yuri,
-    MangaGenre.Garem
+    MangaGenre.Hentai,
+    MangaGenre.Harem,
+    MangaGenre.Thriller,
+    MangaGenre.Mecha,
+    MangaGenre.School,
+    MangaGenre.Drama
 ];
 
 export function validateGenres(input: Array<number>) {
