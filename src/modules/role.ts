@@ -1,9 +1,8 @@
 import {Role} from "../schemas/user";
-import {JwtRequest} from "./jwt";
 import {BadRequestError} from "ts-http-errors";
 
 const roleMiddleware = (roles: Array<Role>) => {
-    return (req: JwtRequest, res, done) => {
+    return (req, res, done) => {
         if (req.user == null) {
             return res.status(400).send(new BadRequestError("Authorization required"));
         }

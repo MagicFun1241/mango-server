@@ -1,5 +1,6 @@
 import {createSchema, Type, typedModel} from "ts-mongoose";
 import Storage from "../classes/storage";
+import {supportedLocales} from "../modules/locale";
 
 export enum MangaState {
     Ongoing = "ongoing",
@@ -13,7 +14,8 @@ export enum MangaGenre {
     Thriller,
     Mecha,
     School,
-    Drama
+    Drama,
+    Fantasy
 }
 
 const Genres = [
@@ -23,10 +25,11 @@ const Genres = [
     MangaGenre.Thriller,
     MangaGenre.Mecha,
     MangaGenre.School,
-    MangaGenre.Drama
+    MangaGenre.Drama,
+    MangaGenre.Fantasy
 ];
 
-export function validateGenres(input: Array<number>) {
+export function validateGenres(input: Array<any>) {
     let rep: Array<number> = [];
 
     for (let i = 0; i < input.length; i++) {
@@ -46,9 +49,15 @@ export interface MangaInterface {
 }
 
 const MangaSchema = createSchema({
-    name: Type.string({
-        required: true,
-        text: true
+    names: Type.array({ required: true }).of({
+        locale: Type.string({
+            required: true,
+            enum: supportedLocales
+        }),
+        name: Type.string({
+            required: true,
+            text: true
+        })
     }),
     state: Type.string({
         default: MangaState.Ongoing,
@@ -59,15 +68,16 @@ const MangaSchema = createSchema({
     }),
     explicit: Type.boolean({ required: true }),
     rating: Type.object().of({
-        sum: Type.number({ default: 0 }),
+        total: Type.number({ default: 0 }),
         reviews: Type.array({ default: [] }).of({
             userId: Type.string({ required: true })
-        }),
+        })
     }),
+    translators: Type.array({ default: [] }).of(Type.objectId()),
     genres: Type.array({ default: [] }).of(Type.number({
         enum: Genres
     })),
-    releaseDate: Type.string({ default: null }),
+    released: Type.string({ default: null }),
     preview: Type.string({ default: Storage.getEmptyPreview() }),
     description: Type.string({ default: "No" })
 });

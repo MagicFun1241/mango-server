@@ -1,0 +1,1 @@
+export const genresQueryRegex = /^\w+(,\w+)*$/;

@@ -7,9 +7,15 @@ interface Environment {
 }
 
 interface Config {
+    limits: {
+        maxTeamsCount: number;
+    },
+    secrets: {
+        jwt: string;
+    },
     env: {
-        production: Environment,
-        development: Environment
+        production: Environment;
+        development: Environment;
     }
 }
 

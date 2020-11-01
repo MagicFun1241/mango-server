@@ -6,13 +6,18 @@ import {BadRequestError} from "ts-http-errors";
 
 import Hash from "../../../classes/hash";
 import User from "../../../schemas/user";
+import Team from "../../../schemas/team";
 
 import Storage from "../../../classes/storage";
 
 import {body} from "express-validator";
 
-import jwtMiddlewareBuilder, {JWT_SECRET, JwtRequest} from "../../../modules/jwt";
+import jwtMiddleware from "../../../modules/jwt";
 import validationMiddleware from "../../../modules/validation";
+
+import {resolveLocale, supportedLocales} from "../../../modules/locale";
+
+import config from "../../../classes/config";
 
 const usersApi = (router: Router) => {
     router.post("/users",
@@ -49,19 +54,27 @@ const usersApi = (router: Router) => {
                     return;
                 }
 
+                if (count > 0) return res.status(400).send(new BadRequestError("email already taken"));
+
+                let locale = resolveLocale(req.ip);
+
+                if (locale == null) locale = supportedLocales[0];
+
                 new User({
                     email: req.body.email,
                     userName: req.body.userName,
                     firstName: req.body.firstName,
                     lastName: req.body.lastName,
-                    password: Hash.create(req.body.password)
+                    password: Hash.create(req.body.password),
+                    locale: locale
                 }).save().then(usr => {
                     res.send({
                         token: jwt.sign({
                             userId: usr._id,
                             role: usr.role,
+                            locale: usr.locale,
                             sessionId: usr.sessionId
-                        }, JWT_SECRET)
+                        }, config.secrets.jwt)
                     });
                 });
             });
@@ -82,9 +95,7 @@ const usersApi = (router: Router) => {
             userName: req.body.login,
             password: Hash.create(req.body.password)
         }).then(user => {
-            if (user == null) {
-                return res.status(400).send(new BadRequestError("Invalid user data"));
-            }
+            if (user == null) return res.status(400).send(new BadRequestError("Invalid user data"));
 
             res.send({
                 firstName: user.firstName,
@@ -94,16 +105,17 @@ const usersApi = (router: Router) => {
                 token: jwt.sign({
                     userId: user._id,
                     role: user.role,
+                    locale: user.locale,
                     sessionId: user.sessionId
-                }, JWT_SECRET)
+                }, config.secrets.jwt)
             });
         });
     });
 
     router.get("/users/me",
-        jwtMiddlewareBuilder(),
-        async (req: JwtRequest, res) => {
-        User.findById(req.user.userId).then(user => {
+        jwtMiddleware,
+        async (req, res) => {
+        User.findById(req.jwt.userId).then(user => {
             res.send({
                 userName: user.userName,
                 photo: user.photo
@@ -112,10 +124,30 @@ const usersApi = (router: Router) => {
     });
 
     router.get("/users/me/lists",
-        jwtMiddlewareBuilder(),
-        async (req: JwtRequest, res) => {
-            User.findById(req.user.userId).then(user => {
+        jwtMiddleware,
+        async (req, res) => {
+            User.findById(req.jwt.userId).then(user => {
                 res.send(user.lists);
+            });
+        });
+
+    router.get("/users/me/teams",
+        jwtMiddleware,
+        async (req, res) => {
+            Team.find({
+                owner: req.jwt.userId
+            }).then(teams => {
+                let result: Array<{
+                    id: string;
+                    name: string;
+                }> = [];
+
+                teams.forEach(e => result.push({
+                    id: e._id,
+                    name: e.name
+                }));
+
+                res.send(result);
             });
         });
 }

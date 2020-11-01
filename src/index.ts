@@ -8,6 +8,8 @@ import * as bodyParser from "body-parser";
 import * as morganBody from 'morgan-body';
 import * as serveStatic from "serve-static";
 
+import Logger from "./classes/logger";
+
 import apiRouter from "./routes/api";
 import config, {isDevelopment} from "./classes/config";
 
@@ -16,7 +18,7 @@ mongoose.connect(isDevelopment ? config.env.development.mongodbUrl : config.env.
     useUnifiedTopology: true,
     useCreateIndex: true
 }).then(() => {
-    console.log("Successfully connected to DB");
+    Logger.info("Successfully connected to DB");
 });
 
 const app = express();

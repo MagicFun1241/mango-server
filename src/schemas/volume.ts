@@ -1,6 +1,7 @@
 import {createSchema, Type, typedModel} from "ts-mongoose";
 
 const VolumeSchema = createSchema({
+    teamId: Type.objectId({ required: true }),
     mangaId: Type.objectId({ required: true }),
 
     number: Type.number({ required: true }),

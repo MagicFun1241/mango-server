@@ -17,21 +17,27 @@ import {
     query
 } from "express-validator";
 
+import {genresQueryRegex} from "../../../classes/regex";
+
 import uploader from "../../../modules/uploader";
 
 import validationMiddleware from "../../../modules/validation";
-import jwtMiddlewareBuilder from "../../../modules/jwt";
+import localeMiddleware from "../../../modules/locale";
 import roleMiddleware from "../../../modules/role";
+import jwtMiddleware from "../../../modules/jwt";
 
-import {BadRequestError} from "ts-http-errors";
-import Storage from "../../../classes/storage";
+import {BadRequestError, NotFoundError} from "ts-http-errors";
+import Storage, {PreviewType} from "../../../classes/storage";
+import Team, {TeamInterface} from "../../../schemas/team";
+
+import buildFullTextRegex from "../../../modules/search";
 
 const mangaApi = (router: Router) => {
-    router.post("/manga", jwtMiddlewareBuilder(), roleMiddleware([
-        Role.Administrator,
-        Role.Moderator,
-        Role.Creator
-    ]), query("name").isString().exists(),
+    router.post("/manga", jwtMiddleware, roleMiddleware([
+            Role.Administrator,
+            Role.Moderator,
+            Role.Creator
+        ]), query("name").isString().exists(),
         query("description").isString().exists(),
         query("explicit").isBoolean().exists(),
         query("genres").isArray().optional(),
@@ -39,71 +45,112 @@ const mangaApi = (router: Router) => {
         validationMiddleware,
         uploader.single("preview"),
         async (req, res) => {
-        if (req.query.genres != null) {
-            if (!validateGenres(req.query.genres)) {
-                return res.status(400).send(new BadRequestError("Invalid genres"));
-            }
-        }
+            if (req.query.genres != null)
+                if (!validateGenres(req.query.genres as any))
+                    return res.status(400).send(new BadRequestError("Invalid genres"));
+                else req.query.genres = [];
 
-        if (req.file != null) {
-            sharp(fs.readFileSync(req.file.path)).jpeg().toFile(path.join(process.cwd(), `/storage/preview/${req.file.filename}.jpg`)).then(() => {
-                fs.unlinkSync(req.file.path);
+            if (req.file != null) {
+                sharp(fs.readFileSync(req.file.path)).jpeg().toFile(path.join(process.cwd(), `/storage/preview/manga/${req.file.filename}.jpg`)).then(() => {
+                    fs.unlinkSync(req.file.path);
 
+                    new Manga({
+                        names: [
+                            {
+                                locale: req.jwt.locale,
+                                name: req.query.name
+                            }
+                        ],
+                        preview: req.file.filename,
+                        explicit: req.query.explicit,
+                        description: req.query.description,
+                        genres: req.query.genres,
+                        released: req.query.released || undefined
+                    }).save().then(manga => {
+                        res.send({
+                            id: manga._id,
+                            preview: manga.preview
+                        });
+                    });
+                });
+            } else {
                 new Manga({
-                    name: req.query.name,
-                    preview: req.file.filename,
+                    names: [
+                        {
+                            locale: req.jwt.locale,
+                            name: req.query.name
+                        }
+                    ],
                     explicit: req.query.explicit,
                     description: req.query.description,
-                    genres: req.query.genres || undefined,
-                    releaseDate: req.query.releaseDate || undefined
+                    genres: req.query.genres,
+                    released: req.query.released || undefined
                 }).save().then(manga => {
                     res.send({
                         id: manga._id,
                         preview: manga.preview
                     });
                 });
-            });
-        } else {
-            new Manga({
-                name: req.query.name,
-                explicit: req.query.explicit,
-                description: req.query.description,
-                genres: req.query.genres || undefined,
-                releaseDate: req.query.releaseDate || undefined
-            }).save().then(manga => {
-                res.send({
-                    id: manga._id,
-                    preview: manga.preview
-                });
-            });
-        }
-    });
+            }
+        });
 
     router.get("/manga/:id",
         param("id").isString().isMongoId().exists(),
         validationMiddleware,
+        localeMiddleware,
         async (req, res) => {
-        Manga.findById(req.params.id).then(manga => {
-            if (manga == null) {
-                res.status(404).send(new BadRequestError("Manga not found"));
-                return;
-            }
+            Manga.findById(req.params.id).then(manga => {
+                if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
-            res.send({
-                name: manga.name,
-                status: manga.state,
-                explicit: manga.explicit,
-                rating: Math.round(manga.rating.sum),
-                reviewsCount: manga.rating.reviews.length,
-                releaseDate: manga.releaseDate,
-                preview: Storage.getPreview(manga.preview),
-                description: manga.description
+                res.send({
+                    name: manga.names[0].name,
+                    status: manga.state,
+                    explicit: manga.explicit,
+                    rating: {
+                        total: Math.round(manga.rating.total),
+                        reviews: manga.rating.reviews.length
+                    },
+                    release: {
+                        date: manga.released
+                    },
+                    translators: manga.translators,
+                    preview: Storage.getPreview(PreviewType.Manga, manga.preview),
+                    description: manga.description
+                });
             });
         });
-    });
+
+    router.get("/manga/:mangaId/translators",
+        query("extended").isBoolean().toBoolean().optional(),
+        validationMiddleware,
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
+
+                if (req.query.extended === true) {
+                    let queries = [];
+
+                    manga.translators.forEach(e => queries.push(Team.findById(e)));
+
+                    Promise.all<TeamInterface>(queries).then(teams => {
+                        let result: Array<{
+                            id: string;
+                            name: string;
+                        }> = [];
+
+                        teams.forEach(e => result.push({
+                            id: e._id,
+                            name: e.name
+                        }));
+
+                        res.send(result);
+                    });
+                } else res.send(manga.translators);
+            });
+        });
 
     router.post("/manga/:mangaId/volumes/:volume/chapters/:chapter",
-        jwtMiddlewareBuilder(),
+        jwtMiddleware,
         roleMiddleware([
             Role.Administrator,
             Role.Moderator,
@@ -238,38 +285,38 @@ const mangaApi = (router: Router) => {
         param("mangaId").isString().isMongoId().exists(),
         param("volume").isNumeric().toInt(),
         param("chapter").isNumeric().toInt(),
+        query("teamId").isMongoId().exists().withMessage("teamId must be a id string"),
+        validationMiddleware,
         async (req, res) => {
-        Manga.findById(req.params.mangaId).then(manga => {
-            if (manga == null) {
-                res.status(404).send(new BadRequestError("Manga not found"));
-                return;
-            }
+            Team.findById(req.query.teamId).then(team => {
+                if (team == null) return res.status(404).send(new NotFoundError("Team not found"));
 
-            Volume.findOne({
-                number: req.params.volume,
-                mangaId: manga._id
-            }).then(vol => {
-                if (vol == null) { // TODO: Добавит вывод ошибок
-                    return;
-                }
+                Manga.findById(req.params.mangaId).then(manga => {
+                    if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
-                let chapter = vol.chapters.find(e => e.number === req.params.chapter);
+                    Volume.findOne({
+                        number: req.params.volume,
+                        mangaId: manga._id,
+                        teamId: team._id,
+                    }).then(vol => {
+                        if (vol == null) return res.status(404).send(new BadRequestError("Volume not found"));
 
-                if (chapter == null) {
-                    return;
-                }
+                        let chapter = vol.chapters.find(e => e.number === req.params.chapter);
 
-                let pages: Array<string> = [];
+                        if (chapter == null) return res.status(404).send(new NotFoundError("Chapter not found"));
 
-                chapter.pages.forEach(e => pages.push(Storage.getChapterPage(manga._id, vol.number, chapter.number, e)));
+                        let pages: Array<string> = [];
 
-                res.send({
-                    name: chapter.name,
-                    pages: pages
+                        chapter.pages.forEach(e => pages.push(Storage.getChapterPage(team._id, manga._id, vol.number, chapter.number, e)));
+
+                        res.send({
+                            name: chapter.name,
+                            pages: pages
+                        });
+                    });
                 });
             });
         });
-    });
 
     router.get("/manga/:mangaId/volumes",
         param("mangaId").isString().isMongoId().exists(),
@@ -326,57 +373,126 @@ const mangaApi = (router: Router) => {
         });
     });
 
-    router.get("/manga/search",
+    router.get("/search",
         query("count").isNumeric().toInt().optional(),
         query("explicit").isBoolean().optional(),
-        query("q").isString().exists(),
+        query("genres").isString().optional(),
+        query("offset").isNumeric().toInt().optional(),
+        query("q").isString().optional(),
         validationMiddleware,
+        localeMiddleware,
         async (req, res) => {
-        const count = req.query.count || 5;
-        const explicit = req.query.explicit || false;
+            if (req.query.genres == null && req.query.q == null) return res.status(400).send(new BadRequestError("genres or q must be defined"));
 
-        Manga.find({
-            $text: { $search: req.query.q },
-            explicit: explicit
-        }).limit(count).then(list => {
-            let result: Array<{
-                id: string;
-                name: string;
-                preview: string;
-                description: string;
-            }> = [];
+            const count = req.query.count || 5;
+            const offset = req.query.offset || 0;
+            const explicit = req.query.explicit || false;
 
-            list.forEach(e => result.push({
-                id: e._id,
-                name: e.name,
-                preview: Storage.getPreview(e.preview),
-                description: e.description
-            }));
+            Manga.find({
+                names: { $elemMatch: { name: { $regex: buildFullTextRegex(req.query.q) } } },
+                explicit: explicit
+            }).skip(offset).limit(count).then(list => {
+                let result: Array<{
+                    id: string;
+                    name: string;
+                    preview: string;
+                    description: string;
+                }> = [];
 
-            res.send(result);
+                list.forEach(e => {
+                    let locale = e.names.find(l => l.locale === req.query.locale);
+
+                    if (locale == null) locale = e.names[0];
+
+                    result.push({
+                        id: e._id,
+                        name: locale.name,
+                        preview: Storage.getPreview(PreviewType.Manga, e.preview),
+                        description: e.description
+                    });
+                });
+
+                res.send(result);
+            });
         });
-    });
+
+    router.get("/explore",
+        query("genres").isString().matches(genresQueryRegex).optional(),
+        validationMiddleware,
+        localeMiddleware,
+        async (req, res) => {
+            if (req.query.genres == null) {
+                // TODO: Выводить общую ленту
+                res.send([]);
+            } else {
+                const genres = req.query.genres.split(",").map(e => parseInt(e));
+                const count = req.query.count || 5;
+
+                if (validateGenres(genres)) {
+                    Manga.find({
+                        genres: { $in: genres }
+                    }).limit(count).then(manga => {
+                        const result: Array<{
+                            id: string;
+                            name: string;
+                            rating: {
+                                total: number;
+                                reviews: number;
+                            };
+                            preview: string;
+                        }> = [];
+
+                        manga.forEach(e => {
+                            let locale = e.names.find(l => l.locale === req.query.locale);
+
+                            if (locale == null) locale = e.names[0];
+
+                            result.push({
+                                id: e._id,
+                                name: locale.name,
+                                rating: {
+                                    total: e.rating.total,
+                                    reviews: e.rating.reviews.length
+                                },
+                                preview: Storage.getPreview(PreviewType.Manga, e.preview)
+                            });
+                        });
+
+                        res.send(result);
+                    });
+                } else res.status(400).send(new BadRequestError("Invalid genres"));
+            }
+        });
 
     router.get("/manga/state/ongoing",
         query("count").isNumeric().toInt().optional(),
+        query("offset").isNumeric().toInt().optional(),
         validationMiddleware,
+        localeMiddleware,
         async (req, res) => {
-            const count = req.query.count || 3;
+            const count = req.query.count || 5;
+            const offset = req.query.offset || 0;
 
             Manga.find({
                 state: MangaState.Ongoing
-            }).limit(count).then(list => {
+            }).skip(offset).limit(count).then(list => {
                 let result: Array<{
                     id: string;
                     name: string;
                     preview: string;
                 }> = [];
 
-                list.forEach(e => result.push({
-                    id: e._id,
-                    name: e.name,
-                    preview: Storage.getPreview(e.preview)
-                }));
+                list.forEach(e => {
+                    let locale = e.names.find(l => l === req.query.locale);
+
+                    if (locale == null) locale = e.names[0];
+
+                    result.push({
+                        id: e._id,
+                        name: locale.name,
+                        preview: Storage.getPreview(PreviewType.Manga, e.preview)
+                    });
+                });
 
                 res.send(result);
             });

@@ -6,6 +6,7 @@ import {
 } from "ts-mongoose";
 
 import {randomDigits} from "@hapi/cryptiles";
+import {supportedLocales} from "../modules/locale";
 
 const SESSION_ID_SIZE = 12;
 
@@ -31,6 +32,10 @@ const UserSchema = createSchema({
     password: Type.string({ required: true }),
 
     role: Type.number({ default: Role.User }),
+    locale: Type.string({
+        required: true,
+        enum: supportedLocales
+    }),
     photo: Type.string({ default: "none" }),
 
     lists: Type.object({

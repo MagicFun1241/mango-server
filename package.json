@@ -1,6 +1,6 @@
 {
   "name": "manga",
-  "version": "1.2.0",
+  "version": "1.2.4",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -14,11 +14,13 @@
   "license": "ISC",
   "dependencies": {
     "@hapi/cryptiles": "^5.1.0",
+    "@magicfun1241/logging": "^3.2.1",
     "body-parser": "^1.19.0",
     "cors": "^2.8.5",
     "express": "^4.17.1",
     "express-jwt": "^6.0.0",
     "express-validator": "^6.6.1",
+    "geoip-lite": "^1.4.2",
     "helmet": "^4.1.0",
     "mkdirp": "^1.0.4",
     "mongoose": "^5.10.4",
@@ -37,6 +39,8 @@
     "@types/cors": "^2.8.7",
     "@types/express": "^4.17.7",
     "@types/express-jwt": "0.0.42",
+    "@types/express-validator": "^3.0.0",
+    "@types/geoip-lite": "^1.4.0",
     "@types/jsonwebtoken": "^8.5.0",
     "@types/mkdirp": "^1.0.1",
     "@types/mongoose": "^5.7.36",
