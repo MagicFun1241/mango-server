@@ -4,19 +4,12 @@ import * as sharp from "sharp";
 import * as mkdirp from "mkdirp";
 
 import {Router} from "express";
-
-import StreamZip = require("node-stream-zip");
 import Volume from "../../../schemas/volume";
 import Character from "../../../schemas/character";
 import Manga, {MangaState, validateGenres} from "../../../schemas/manga";
-import {
-    Role
-} from "../../../schemas/user";
+import {Role} from "../../../schemas/user";
 
-import {
-    param,
-    query
-} from "express-validator";
+import {param, query} from "express-validator";
 
 import {genresQueryRegex} from "../../../classes/regex";
 
@@ -30,6 +23,7 @@ import jwtMiddleware from "../../../modules/jwt";
 import {BadRequestError, NotFoundError} from "ts-http-errors";
 import Storage, {PreviewType} from "../../../classes/storage";
 import Team, {TeamInterface} from "../../../schemas/team";
+import StreamZip = require("node-stream-zip");
 
 import buildFullTextRegex from "../../../modules/search";
 
@@ -40,10 +34,11 @@ const mangaApi = (router: Router) => {
             Role.Creator
         ]), query("name").isString().exists(),
         query("description").isString().exists(),
-        query("explicit").isBoolean().exists(),
+        query("explicit").isBoolean().toBoolean().exists(),
         query("genres").isArray().optional(),
-        query("releaseDate").isString().optional(),
+        query("released").isNumeric().toInt().optional(),
         validationMiddleware,
+        localeMiddleware,
         uploader.single("preview"),
         async (req, res) => {
             if (req.query.genres != null)
@@ -58,7 +53,7 @@ const mangaApi = (router: Router) => {
                     new Manga({
                         names: [
                             {
-                                locale: req.jwt.locale,
+                                locale: req.query.locale,
                                 name: req.query.name
                             }
                         ],
@@ -70,7 +65,7 @@ const mangaApi = (router: Router) => {
                     }).save().then(manga => {
                         res.send({
                             id: manga._id,
-                            preview: manga.preview
+                            preview: Storage.getPreview(PreviewType.Manga, manga.preview)
                         });
                     });
                 });
@@ -89,7 +84,7 @@ const mangaApi = (router: Router) => {
                 }).save().then(manga => {
                     res.send({
                         id: manga._id,
-                        preview: manga.preview
+                        preview: Storage.getPreview(PreviewType.Manga, manga.preview)
                     });
                 });
             }
@@ -122,6 +117,49 @@ const mangaApi = (router: Router) => {
                         id: e._id,
                         name: locale.name,
                         preview: Storage.getPreview(PreviewType.Manga, e.preview)
+                    });
+                });
+
+                res.send(result);
+            });
+        });
+
+    router.get("/manga/search",
+        query("count").isNumeric().toInt().optional(),
+        query("explicit").isBoolean().optional(),
+        query("genres").isString().optional(),
+        query("offset").isNumeric().toInt().optional(),
+        query("q").isString().optional(),
+        validationMiddleware,
+        localeMiddleware,
+        async (req, res) => {
+            if (req.query.genres == null && req.query.q == null) return res.status(400).send(new BadRequestError("genres or q must be defined"));
+
+            const count = req.query.count || 5;
+            const offset = req.query.offset || 0;
+            const explicit = req.query.explicit || false;
+
+            Manga.find({
+                names: { $elemMatch: { name: { $regex: buildFullTextRegex(req.query.q) } } },
+                explicit: explicit
+            }).skip(offset).limit(count).then(list => {
+                let result: Array<{
+                    id: string;
+                    name: string;
+                    preview: string;
+                    description: string;
+                }> = [];
+
+                list.forEach(e => {
+                    let locale = e.names.find(l => l.locale === req.query.locale);
+
+                    if (locale == null) locale = e.names[0];
+
+                    result.push({
+                        id: e._id,
+                        name: locale.name,
+                        preview: Storage.getPreview(PreviewType.Manga, e.preview),
+                        description: e.description
                     });
                 });
 
@@ -167,8 +205,6 @@ const mangaApi = (router: Router) => {
                                 const character = await Character.findById(manga.characters[i]);
 
                                 let locale = character.names.find(e => e.locale === req.query.locale);
-
-                                console.log(character)
 
                                 if (locale == null) locale = character.names[0];
 
@@ -504,49 +540,6 @@ const mangaApi = (router: Router) => {
             });
         });
     });
-
-    router.get("/search",
-        query("count").isNumeric().toInt().optional(),
-        query("explicit").isBoolean().optional(),
-        query("genres").isString().optional(),
-        query("offset").isNumeric().toInt().optional(),
-        query("q").isString().optional(),
-        validationMiddleware,
-        localeMiddleware,
-        async (req, res) => {
-            if (req.query.genres == null && req.query.q == null) return res.status(400).send(new BadRequestError("genres or q must be defined"));
-
-            const count = req.query.count || 5;
-            const offset = req.query.offset || 0;
-            const explicit = req.query.explicit || false;
-
-            Manga.find({
-                names: { $elemMatch: { name: { $regex: buildFullTextRegex(req.query.q) } } },
-                explicit: explicit
-            }).skip(offset).limit(count).then(list => {
-                let result: Array<{
-                    id: string;
-                    name: string;
-                    preview: string;
-                    description: string;
-                }> = [];
-
-                list.forEach(e => {
-                    let locale = e.names.find(l => l.locale === req.query.locale);
-
-                    if (locale == null) locale = e.names[0];
-
-                    result.push({
-                        id: e._id,
-                        name: locale.name,
-                        preview: Storage.getPreview(PreviewType.Manga, e.preview),
-                        description: e.description
-                    });
-                });
-
-                res.send(result);
-            });
-        });
 
     router.get("/explore",
         query("genres").isString().matches(genresQueryRegex).optional(),

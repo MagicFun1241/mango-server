@@ -31,7 +31,7 @@ export default function localeMiddleware(request: Request, response: Response, n
         else request.query.locale = request.jwt.locale;
 
         next();
-    } else if (typeof request.query.locale != "string") {
+    } else if (typeof request.query.locale !== "string") {
         response.status(400).send(new BadRequestError("locale must be string"));
     } else {
         if (supportedLocales.includes(request.query.locale as any)) next();

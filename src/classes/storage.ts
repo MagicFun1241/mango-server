@@ -1,6 +1,7 @@
 import config, {isDevelopment} from "./config";
 
 export enum PreviewType {
+    Character = "character",
     Manga = "manga",
     News = "news"
 }
