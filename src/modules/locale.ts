@@ -27,7 +27,9 @@ export function resolveLocale(ip: string): string | null {
 
 export default function localeMiddleware(request: Request, response: Response, next: NextFunction) {
     if (request.query.locale == null) {
-        request.query.locale = supportedLocales[0];
+        if (request.jwt == null) request.query.locale = supportedLocales[0];
+        else request.query.locale = request.jwt.locale;
+
         next();
     } else if (typeof request.query.locale != "string") {
         response.status(400).send(new BadRequestError("locale must be string"));

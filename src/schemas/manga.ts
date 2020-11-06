@@ -1,6 +1,7 @@
 import {createSchema, Type, typedModel} from "ts-mongoose";
-import Storage from "../classes/storage";
 import {supportedLocales} from "../modules/locale";
+
+import Storage from "../classes/storage";
 
 export enum MangaState {
     Ongoing = "ongoing",
@@ -59,6 +60,7 @@ const MangaSchema = createSchema({
             text: true
         })
     }),
+    characters: Type.array({ default: null }).of(Type.objectId()),
     state: Type.string({
         default: MangaState.Ongoing,
         enum: [
@@ -77,7 +79,7 @@ const MangaSchema = createSchema({
     genres: Type.array({ default: [] }).of(Type.number({
         enum: Genres
     })),
-    released: Type.string({ default: null }),
+    released: Type.number({ default: null }),
     preview: Type.string({ default: Storage.getEmptyPreview() }),
     description: Type.string({ default: "No" })
 });

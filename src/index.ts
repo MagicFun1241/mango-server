@@ -13,6 +13,18 @@ import Logger from "./classes/logger";
 import apiRouter from "./routes/api";
 import config, {isDevelopment} from "./classes/config";
 
+declare global {
+    interface Array<T> {
+        remove(index: number): Array<T>;
+    }
+}
+
+// @ts-ignore
+Array.prototype.remove = function (index) {
+    this.splice(index, 1);
+    return this;
+};
+
 mongoose.connect(isDevelopment ? config.env.development.mongodbUrl : config.env.production.mongodbUrl, {
     useNewUrlParser: true,
     useUnifiedTopology: true,

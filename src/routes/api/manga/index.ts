@@ -7,6 +7,7 @@ import {Router} from "express";
 
 import StreamZip = require("node-stream-zip");
 import Volume from "../../../schemas/volume";
+import Character from "../../../schemas/character";
 import Manga, {MangaState, validateGenres} from "../../../schemas/manga";
 import {
     Role
@@ -94,15 +95,117 @@ const mangaApi = (router: Router) => {
             }
         });
 
-    router.get("/manga/:id",
-        param("id").isString().isMongoId().exists(),
+    router.get("/manga/ongoing",
+        query("count").isNumeric().toInt().optional(),
+        query("offset").isNumeric().toInt().optional(),
         validationMiddleware,
         localeMiddleware,
         async (req, res) => {
-            Manga.findById(req.params.id).then(manga => {
+            const count = req.query.count || 5;
+            const offset = req.query.offset || 0;
+
+            Manga.find({
+                state: MangaState.Ongoing
+            }).skip(offset).limit(count).then(list => {
+                let result: Array<{
+                    id: string;
+                    name: string;
+                    preview: string;
+                }> = [];
+
+                list.forEach(e => {
+                    let locale = e.names.find(l => l === req.query.locale);
+
+                    if (locale == null) locale = e.names[0];
+
+                    result.push({
+                        id: e._id,
+                        name: locale.name,
+                        preview: Storage.getPreview(PreviewType.Manga, e.preview)
+                    });
+                });
+
+                res.send(result);
+            });
+        });
+
+    router.get("/manga/:id",
+        param("id").isString().isMongoId().exists(),
+        query("extended").isBoolean().optional(),
+        validationMiddleware,
+        localeMiddleware,
+        async (req, res) => {
+            Manga.findById(req.params.id).then(async manga => {
                 if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
-                res.send({
+                const extended = req.query.extended || false;
+
+                if (extended) {
+                    const translators: Array<{
+                        id: string;
+                        name: string;
+                    }> = [];
+
+                    for (let i = 0; i < manga.translators.length; i++) {
+                        try {
+                            let team = await Team.findById(manga.translators[i].toHexString());
+
+                            translators.push({
+                                id: team._id,
+                                name: team.name
+                            });
+                        } catch (e) {
+                            return res.status(404).send(new NotFoundError("Not Found"));
+                        }
+                    }
+
+                    const characters = manga.characters == null ? undefined : [];
+
+                    if (manga.characters != null) {
+                        for (let i = 0; i < manga.characters.length; i++) {
+                            try {
+                                const character = await Character.findById(manga.characters[i]);
+
+                                let locale = character.names.find(e => e.locale === req.query.locale);
+
+                                console.log(character)
+
+                                if (locale == null) locale = character.names[0];
+
+                                characters.push({
+                                    id: character._id,
+                                    name: locale.name
+                                });
+                            } catch (e) {
+                                return res.status(404).send(new NotFoundError("Not Found"));
+                            }
+                        }
+                    }
+
+                    let localeIndex = manga.names.findIndex(e => e.locale === req.query.locale);
+
+                    if (localeIndex === -1) localeIndex = 0;
+
+                    res.send({
+                        names: [
+                            manga.names[localeIndex].name,
+                            ...[...manga.names].remove(localeIndex).map(e => e.name)
+                        ],
+                        characters: characters,
+                        status: manga.state,
+                        explicit: manga.explicit,
+                        rating: {
+                            total: Math.round(manga.rating.total),
+                            reviews: manga.rating.reviews.length
+                        },
+                        release: {
+                            date: manga.released
+                        },
+                        translators: translators,
+                        preview: Storage.getPreview(PreviewType.Manga, manga.preview),
+                        description: manga.description
+                    });
+                } else res.send({
                     name: manga.names[0].name,
                     status: manga.state,
                     explicit: manga.explicit,
@@ -116,6 +219,35 @@ const mangaApi = (router: Router) => {
                     translators: manga.translators,
                     preview: Storage.getPreview(PreviewType.Manga, manga.preview),
                     description: manga.description
+                });
+            });
+        });
+
+    router.post("/manga/:mangaId/characters",
+        jwtMiddleware,
+        roleMiddleware([
+            Role.Moderator,
+            Role.Administrator,
+            Role.Creator
+        ]),
+        query("characterId").isString().exists(),
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found."));
+
+                Character.findById(req.query.characterId).then(character => {
+                    if (character == null) return res.status(404).send(new NotFoundError("Character not found."));
+
+                    if (manga.characters == null) {
+                        manga.characters = [ character._id ];
+                    } else {
+                        if (manga.characters.includes(req.query.characterId)) return res.status(400).send(new BadRequestError("Character already exists in this manga."));
+
+                        manga.characters.push(req.query.characterId);
+                        manga.save().then(() => {
+                            res.status(204).send();
+                        });
+                    }
                 });
             });
         });
@@ -435,6 +567,7 @@ const mangaApi = (router: Router) => {
                         const result: Array<{
                             id: string;
                             name: string;
+                            description: string;
                             rating: {
                                 total: number;
                                 reviews: number;
@@ -450,6 +583,7 @@ const mangaApi = (router: Router) => {
                             result.push({
                                 id: e._id,
                                 name: locale.name,
+                                description: e.description,
                                 rating: {
                                     total: e.rating.total,
                                     reviews: e.rating.reviews.length
@@ -462,40 +596,6 @@ const mangaApi = (router: Router) => {
                     });
                 } else res.status(400).send(new BadRequestError("Invalid genres"));
             }
-        });
-
-    router.get("/manga/state/ongoing",
-        query("count").isNumeric().toInt().optional(),
-        query("offset").isNumeric().toInt().optional(),
-        validationMiddleware,
-        localeMiddleware,
-        async (req, res) => {
-            const count = req.query.count || 5;
-            const offset = req.query.offset || 0;
-
-            Manga.find({
-                state: MangaState.Ongoing
-            }).skip(offset).limit(count).then(list => {
-                let result: Array<{
-                    id: string;
-                    name: string;
-                    preview: string;
-                }> = [];
-
-                list.forEach(e => {
-                    let locale = e.names.find(l => l === req.query.locale);
-
-                    if (locale == null) locale = e.names[0];
-
-                    result.push({
-                        id: e._id,
-                        name: locale.name,
-                        preview: Storage.getPreview(PreviewType.Manga, e.preview)
-                    });
-                });
-
-                res.send(result);
-            });
         });
 };
 

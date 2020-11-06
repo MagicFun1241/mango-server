@@ -1,12 +1,9 @@
 import * as jwt from "jsonwebtoken";
 
-import {Request}from "express";
 import User, {Role} from "../schemas/user";
 import {BadRequestError, ForbiddenError, UnauthorizedError} from "ts-http-errors";
 
 import config from "../classes/config";
-
-type Modify<T, R> = Pick<T, Exclude<keyof T, keyof R>> & R
 
 export interface TokenPayload {
     userId: string;
@@ -23,7 +20,7 @@ declare global {
     }
 }
 
-const jwtMiddlewareBuilder = (request, response, next) => {
+const jwtMiddleware = (request, response, next) => {
     const authorization = request.headers["authorization"];
 
     if (authorization == null) response.status(401).send(new UnauthorizedError());
@@ -43,16 +40,18 @@ const jwtMiddlewareBuilder = (request, response, next) => {
         try {
             const user: TokenPayload = jwt.verify(parts[1], config.secrets.jwt) as any;
 
-            User.findById(user.userId).then(user => {
-                if (user == null) {
+            User.findById(user.userId).then(usr => {
+                if (usr == null) {
                     next(new Error("User not found"));
                     return;
                 }
 
-                /*if (user.sessionId !== req.user.sessionId) {
+                if (usr.sessionId !== user.sessionId) {
                     next(new Error("Token is recalled"));
                     return;
-                }*/
+                }
+
+                request.jwt = user;
 
                 next();
             });
@@ -62,4 +61,4 @@ const jwtMiddlewareBuilder = (request, response, next) => {
     }
 }
 
-export default jwtMiddlewareBuilder;
+export default jwtMiddleware;
