@@ -16,7 +16,10 @@ export enum MangaGenre {
     Mecha,
     School,
     Drama,
-    Fantasy
+    Fantasy,
+    Shounen,
+    Romance,
+    Comedy
 }
 
 const Genres = [
@@ -27,7 +30,10 @@ const Genres = [
     MangaGenre.Mecha,
     MangaGenre.School,
     MangaGenre.Drama,
-    MangaGenre.Fantasy
+    MangaGenre.Fantasy,
+    MangaGenre.Shounen,
+    MangaGenre.Romance,
+    MangaGenre.Comedy
 ];
 
 export function validateGenres(input: Array<any>) {
@@ -69,9 +75,14 @@ const MangaSchema = createSchema({
         ]
     }),
     explicit: Type.boolean({ required: true }),
-    rating: Type.object().of({
-        total: Type.number({ default: 0 }),
-        reviews: Type.array({ default: [] }).of({
+    rating: Type.object({
+        default: {
+            total: 0,
+            reviews: []
+        }
+    }).of({
+        total: Type.number({ required: true }),
+        reviews: Type.array({ required: true }).of({
             userId: Type.string({ required: true })
         })
     }),

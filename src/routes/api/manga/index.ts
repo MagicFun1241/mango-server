@@ -10,7 +10,6 @@ import Manga, {MangaState, validateGenres} from "../../../schemas/manga";
 import {Role} from "../../../schemas/user";
 
 import {param, query} from "express-validator";
-
 import {genresQueryRegex} from "../../../classes/regex";
 
 import uploader from "../../../modules/uploader";
@@ -237,6 +236,7 @@ const mangaApi = (router: Router) => {
                         release: {
                             date: manga.released
                         },
+                        genres: manga.genres,
                         translators: translators,
                         preview: Storage.getPreview(PreviewType.Manga, manga.preview),
                         description: manga.description
@@ -252,6 +252,7 @@ const mangaApi = (router: Router) => {
                     release: {
                         date: manga.released
                     },
+                    genres: manga.genres,
                     translators: manga.translators,
                     preview: Storage.getPreview(PreviewType.Manga, manga.preview),
                     description: manga.description
@@ -267,6 +268,7 @@ const mangaApi = (router: Router) => {
             Role.Creator
         ]),
         query("characterId").isString().exists(),
+        validationMiddleware,
         async (req, res) => {
             Manga.findById(req.params.mangaId).then(manga => {
                 if (manga == null) return res.status(404).send(new NotFoundError("Manga not found."));
@@ -304,11 +306,15 @@ const mangaApi = (router: Router) => {
                         let result: Array<{
                             id: string;
                             name: string;
+                            photo: string;
+                            description: string;
                         }> = [];
 
                         teams.forEach(e => result.push({
                             id: e._id,
-                            name: e.name
+                            name: e.name,
+                            photo: Storage.getTeamPhoto(e.photo),
+                            description: e.description
                         }));
 
                         res.send(result);
@@ -317,14 +323,15 @@ const mangaApi = (router: Router) => {
             });
         });
 
-    router.post("/manga/:mangaId/volumes/:volume/chapters/:chapter",
+    router.post("/teams/:teamId/manga/:mangaId/volumes/:volume/chapters/:chapter",
         jwtMiddleware,
         roleMiddleware([
             Role.Administrator,
             Role.Moderator,
             Role.Creator
         ]),
-        param("mangaId").isString().isMongoId().exists(),
+        param("mangaId").isMongoId().exists(),
+        param("teamId").isMongoId().exists(),
         param("volume").isNumeric().toInt(),
         param("chapter").isNumeric().toInt(),
         // Данные главы
@@ -335,128 +342,130 @@ const mangaApi = (router: Router) => {
             Manga.findOne({
                 _id: req.params.mangaId
             }).then(manga => {
-                if (manga == null) {
-                    res.status(404).send(new BadRequestError("Manga not found"));
-                    return;
-                }
+                if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
-                const c = (callback: (context: {
-                    zip: StreamZip,
-                    zipPath: string;
-                    pages: Array<string>;
-                }) => any) => {
-                    let zip = new StreamZip({
-                        file: req.file.path,
-                        storeEntries: true
-                    });
+                Team.findById(req.params.teamId).then(team => {
+                    if (team == null) return res.status(404).send(new NotFoundError("Team not found."));
 
-                    const supportedExtensions = [
-                        ".jpg",
-                        ".jpeg",
-                        ".png"
-                    ];
+                    const c = (callback: (context: {
+                        zip: StreamZip,
+                        zipPath: string;
+                        pages: Array<string>;
+                    }) => any) => {
+                        let zip = new StreamZip({
+                            file: req.file.path,
+                            storeEntries: true
+                        });
 
-                    zip.on('ready', () => {
-                        let error: string;
-                        let pages: Array<string> = [];
+                        const supportedExtensions = [
+                            ".jpg",
+                            ".jpeg",
+                            ".png"
+                        ];
 
-                        for (const entry of Object.values(zip.entries())) {
-                            if (entry.isDirectory) {
-                                error = "The archive should not contain folders";
-                                break;
-                            } else if (!supportedExtensions.includes(path.extname(entry.name))) {
-                                error = "Unsupported file found";
-                                break;
-                            } else pages.push(entry.name);
-                        }
+                        zip.on('ready', () => {
+                            let error: string;
+                            let pages: Array<string> = [];
 
-                        if (error != null) {
-                            res.status(400).send(new BadRequestError(error));
-                            zip.close();
-                            fs.unlinkSync(req.file.path);
+                            for (const entry of Object.values(zip.entries())) {
+                                if (entry.isDirectory) {
+                                    error = "The archive should not contain folders";
+                                    break;
+                                } else if (!supportedExtensions.includes(path.extname(entry.name))) {
+                                    error = "Unsupported file found";
+                                    break;
+                                } else pages.push(entry.name);
+                            }
+
+                            if (error != null) {
+                                res.status(400).send(new BadRequestError(error));
+                                zip.close();
+                                fs.unlinkSync(req.file.path);
+                            } else {
+                                let p = path.join(process.cwd(), `/storage/team/${team._id}/manga/${manga._id}/${req.params.volume}/${req.params.chapter}`);
+
+                                if (!fs.existsSync(p)) mkdirp.sync(p);
+
+                                zip.extract(null, p, err => {
+                                    if (err) {
+                                        return;
+                                    }
+
+                                    callback({
+                                        zip: new Proxy(zip, {}),
+                                        zipPath: req.file.path,
+                                        pages
+                                    });
+                                });
+                            }
+                        });
+                    }
+
+                    Volume.findOne({
+                        teamId: team._id,
+                        mangaId: manga._id,
+                        number: req.params.volume,
+                    }).then(volume => {
+                        if (volume == null) {
+                            if (req.file == null) {
+                                return;
+                            }
+
+                            c(({
+                                   pages,
+                                   zip,
+                                   zipPath
+                               }) => {
+                                new Volume({
+                                    number: req.params.volume,
+                                    mangaId: manga._id,
+                                    chapters: [
+                                        {
+                                            number: req.params.chapter,
+                                            name: req.query.name,
+                                            pages: pages
+                                        }
+                                    ]
+                                }).save().then(() => {
+                                    res.status(204).send();
+
+                                    zip.close();
+                                    fs.unlinkSync(zipPath);
+                                });
+                            });
                         } else {
-                            let p = path.join(process.cwd(), `/storage/manga/${manga._id}/${req.params.volume}/${req.params.chapter}`);
+                            c(({
+                                   pages,
+                                   zip,
+                                   zipPath
+                               }) => {
+                                volume.chapters.push({
+                                    number: req.params.chapter,
+                                    name: req.query.name,
+                                    pages: pages
+                                });
 
-                            if (!fs.existsSync(p)) mkdirp.sync(p);
+                                volume.save().then(() => {
+                                    res.status(204).send();
 
-                            zip.extract(null, p, err => {
-                                if (err) {
-                                    return;
-                                }
-
-                                callback({
-                                    zip: new Proxy(zip, {}),
-                                    zipPath: req.file.path,
-                                    pages
+                                    zip.close();
+                                    fs.unlinkSync(zipPath);
                                 });
                             });
                         }
                     });
-                }
-
-                Volume.findOne({
-                    number: req.params.volume,
-                    mangaId: manga._id
-                }).then(volume => {
-                    if (volume == null) {
-                        if (req.file == null) {
-                            return;
-                        }
-
-                        c(({
-                               pages,
-                            zip,
-                            zipPath
-                        }) => {
-                            new Volume({
-                                number: req.params.volume,
-                                mangaId: manga._id,
-                                chapters: [
-                                    {
-                                        number: req.params.chapter,
-                                        name: req.query.name,
-                                        pages: pages
-                                    }
-                                ]
-                            }).save().then(() => {
-                                res.status(204).send();
-
-                                zip.close();
-                                fs.unlinkSync(zipPath);
-                            });
-                        });
-                    } else {
-                        c(({
-                               pages,
-                               zip,
-                               zipPath
-                        }) => {
-                            volume.chapters.push({
-                                number: req.params.chapter,
-                                name: req.query.name,
-                                pages: pages
-                            });
-
-                            volume.save().then(() => {
-                                res.status(204).send();
-
-                                zip.close();
-                                fs.unlinkSync(zipPath);
-                            });
-                        });
-                    }
                 });
             });
         });
 
-    router.get("/manga/:mangaId/volumes/:volume/chapters/:chapter",
-        param("mangaId").isString().isMongoId().exists(),
+    router.get("/teams/:teamId/manga/:mangaId/volumes/:volume/chapters/:chapter",
+        param("mangaId").isMongoId().exists(),
+        param("teamId").isMongoId().exists().withMessage("teamId must be a id string"),
         param("volume").isNumeric().toInt(),
         param("chapter").isNumeric().toInt(),
-        query("teamId").isMongoId().exists().withMessage("teamId must be a id string"),
         validationMiddleware,
         async (req, res) => {
-            Team.findById(req.query.teamId).then(team => {
+            Team.findById(req.params.teamId).then(team => {
                 if (team == null) return res.status(404).send(new NotFoundError("Team not found"));
 
                 Manga.findById(req.params.mangaId).then(manga => {
@@ -486,45 +495,67 @@ const mangaApi = (router: Router) => {
             });
         });
 
-    router.get("/manga/:mangaId/volumes",
-        param("mangaId").isString().isMongoId().exists(),
+    router.get("/teams/:teamId/manga/:mangaId/volumes",
+        param("mangaId").isMongoId().exists(),
+        param("teamId").isMongoId().exists(),
+        query("extended").isBoolean().toBoolean().optional(),
+        validationMiddleware,
         async (req, res) => {
             Manga.findById(req.params.mangaId).then(manga => {
-                if (manga == null) {
-                    res.status(404).send(new BadRequestError("Manga not found"));
-                    return;
-                }
+                if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
                 Volume.find({
-                    mangaId: manga._id
+                    mangaId: manga._id,
+                    teamId: req.params.teamId
                 }).sort({ number: -1 }).then(volumes => {
+                    const extended = req.query.extended || false;
+
                     let result: Array<{
-                        number: number;
+                        id: number;
                         preview: string;
+                        chapters?: Array<{
+                            id: number;
+                            name: string;
+                        }>;
                     }> = [];
 
-                    volumes.forEach(e => result.push({
-                        number: e.number,
-                        preview: e.preview
-                    }));
+                    const callback = extended ? e => {
+                        result.push({
+                            id: e.number,
+                            preview: e.preview,
+                            chapters: e.chapters.map(c => {
+                                return {
+                                    id: c.number,
+                                    name: c.name
+                                };
+                            })
+                        });
+                    } : e => {
+                        result.push({
+                            id: e.number,
+                            preview: e.preview
+                        });
+                    };
+
+                    volumes.forEach(callback);
 
                     res.send(result);
                 });
             });
         });
 
-    router.get("/manga/:mangaId/volumes/:volume/chapters",
-        param("mangaId").isString().isMongoId().exists(),
+    router.get("/teams/:teamId/manga/:mangaId/volumes/:volume/chapters",
+        param("mangaId").isMongoId().exists(),
+        param("teamId").isMongoId().exists(),
         param("volume").isNumeric().toInt(),
         async (req, res) => {
         Manga.findById(req.params.mangaId).then(manga => {
-            if (manga == null) {
-                return;
-            }
+            if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
 
             Volume.findOne({
-                number: req.params.volume,
-                mangaId: manga._id
+                mangaId: manga._id,
+                teamId: req.params.teamId,
+                number: req.params.volume
             }).sort({ number: -1 }).then(volume => {
                 let result: Array<{
                     number: number;

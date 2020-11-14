@@ -1,9 +1,13 @@
+import * as fs from "fs";
+import * as path from "path";
+import * as sharp from "sharp";
+
 import {Router} from "express";
 import {Role} from "../../../schemas/user";
 
 import {BadRequestError, NotFoundError} from "ts-http-errors";
 
-import Storage, {PreviewType} from "../../../classes/storage";
+import Storage from "../../../classes/storage";
 import Character from "../../../schemas/character";
 
 import {body, query} from "express-validator";
@@ -14,6 +18,7 @@ import localeMiddleware, {supportedLocales} from "../../../modules/locale";
 import validationMiddleware from "../../../modules/validation";
 
 import buildFullTextRegex from "../../../modules/search";
+import uploader from "../../../modules/uploader";
 
 const charactersApi = (router: Router) => {
     router.post("/characters",
@@ -23,16 +28,46 @@ const charactersApi = (router: Router) => {
             Role.Administrator,
             Role.Creator
         ]),
-        body("name").isString().exists(),
-        body("description").isString().optional(),
+        query("name").isString().exists(),
+        query("description").isString().optional(),
         validationMiddleware,
         localeMiddleware,
+        uploader.single("photo"),
         async (req, res) => {
-            new Character({
+            const create = (data) => {
+                new Character(data).save().then(character => {
+                    res.send({
+                        id: character._id,
+                        photo: Storage.getCharacterPhoto(character.photo)
+                    });
+                });
+            };
+
+            if (req.file != null) {
+                sharp(req.file.path).jpeg().toFile(path.join(process.cwd(), `/storage/character/${req.file.filename}.jpg`)).then(() => {
+                    fs.unlinkSync(req.file.path);
+
+                    create({
+                        names: [
+                            {
+                                locale: req.query.locale,
+                                name: req.query.name
+                            }
+                        ],
+                        descriptions: [
+                            (req.query.description == null) ? undefined : {
+                                locale: req.query.locale,
+                                text: req.query.description
+                            }
+                        ],
+                        photo: req.file.filename
+                    });
+                });
+            } else create({
                 names: [
                     {
                         locale: req.query.locale,
-                        name: req.body.name
+                        name: req.query.name
                     }
                 ],
                 descriptions: [
@@ -41,11 +76,31 @@ const charactersApi = (router: Router) => {
                         text: req.query.description
                     }
                 ]
-            }).save().then(character => {
-                res.send({
-                    id: character._id,
-                    photo: Storage.getPreview(PreviewType.Character, character.photo)
-                });
+            });
+        });
+
+    router.post("/characters/:id/photo",
+        jwtMiddleware,
+        roleMiddleware([
+            Role.Moderator,
+            Role.Administrator,
+            Role.Creator
+        ]),
+        uploader.single("photo"),
+        async (req, res) => {
+            Character.findById(req.params.id).then(character => {
+                if (character == null) return res.status(404).send(new NotFoundError("Character not found."));
+
+                if (req.file != null) {
+                    sharp(req.file.path).jpeg().toFile(path.join(process.cwd(), `/storage/character/${req.file.filename}.jpg`)).then(() => {
+                        character.photo = req.file.filename;
+                        character.save().then(() => {
+                           res.send({
+                               photo: Storage.getCharacterPhoto(req.file.filename)
+                           });
+                        });
+                    });
+                } else res.status(400).send(new BadRequestError("photo must be passed"));
             });
         });
 
@@ -104,7 +159,7 @@ const charactersApi = (router: Router) => {
                        character.names[nameLocaleIndex].name,
                        ...[ ...character.names ].remove(nameLocaleIndex).map(e => e.name)
                     ],
-                    photo: Storage.getPreview(PreviewType.Character, character.photo),
+                    photo: Storage.getCharacterPhoto(character.photo),
                     description: descriptionLocale.text
                 });
             } else {
@@ -114,7 +169,7 @@ const charactersApi = (router: Router) => {
 
                 res.send({
                     name: locale.name,
-                    photo: Storage.getPreview(PreviewType.Character, character.photo),
+                    photo: Storage.getCharacterPhoto(character.photo),
                     description: descriptionLocale.text
                 });
             }
