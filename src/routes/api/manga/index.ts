@@ -19,10 +19,11 @@ import localeMiddleware from "../../../modules/locale";
 import roleMiddleware from "../../../modules/role";
 import jwtMiddleware from "../../../modules/jwt";
 
-import {BadRequestError, NotFoundError} from "ts-http-errors";
+import {BadRequestError, ForbiddenError, NotFoundError} from "ts-http-errors";
 import Storage, {PreviewType} from "../../../classes/storage";
 import Team, {TeamInterface} from "../../../schemas/team";
 import StreamZip = require("node-stream-zip");
+import TimSort = require("timsort");
 
 import buildFullTextRegex from "../../../modules/search";
 
@@ -58,7 +59,12 @@ const mangaApi = (router: Router) => {
                         ],
                         preview: req.file.filename,
                         explicit: req.query.explicit,
-                        description: req.query.description,
+                        descriptions: [
+                            {
+                                locale: req.query.locale,
+                                text: req.query.description
+                            }
+                        ],
                         genres: req.query.genres,
                         released: req.query.released || undefined
                     }).save().then(manga => {
@@ -77,7 +83,12 @@ const mangaApi = (router: Router) => {
                         }
                     ],
                     explicit: req.query.explicit,
-                    description: req.query.description,
+                    descriptions: [
+                        {
+                            locale: req.query.locale,
+                            text: req.query.description
+                        }
+                    ],
                     genres: req.query.genres,
                     released: req.query.released || undefined
                 }).save().then(manga => {
@@ -150,15 +161,17 @@ const mangaApi = (router: Router) => {
                 }> = [];
 
                 list.forEach(e => {
-                    let locale = e.names.find(l => l.locale === req.query.locale);
+                    let localeIndex = e.names.findIndex(l => l.locale === req.query.locale);
+                    if (localeIndex === -1) localeIndex = 0;
 
-                    if (locale == null) locale = e.names[0];
+                    let descriptionIndex = e.descriptions.findIndex(l => l.locale === req.query.locale);
+                    if (descriptionIndex === -1) descriptionIndex = 0;
 
                     result.push({
                         id: e._id,
-                        name: locale.name,
+                        name: e.names[localeIndex].name,
                         preview: Storage.getPreview(PreviewType.Manga, e.preview),
-                        description: e.description
+                        description: e.descriptions[descriptionIndex].text
                     });
                 });
 
@@ -176,6 +189,12 @@ const mangaApi = (router: Router) => {
                 if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
                 const extended = req.query.extended || false;
+
+                let localeIndex = manga.names.findIndex(e => e.locale === req.query.locale);
+                if (localeIndex === -1) localeIndex = 0;
+
+                let descriptionIndex = manga.descriptions.findIndex(e => e.locale === req.query.locale);
+                if (descriptionIndex === -1) descriptionIndex = 0;
 
                 if (extended) {
                     const translators: Array<{
@@ -217,10 +236,6 @@ const mangaApi = (router: Router) => {
                         }
                     }
 
-                    let localeIndex = manga.names.findIndex(e => e.locale === req.query.locale);
-
-                    if (localeIndex === -1) localeIndex = 0;
-
                     res.send({
                         names: [
                             manga.names[localeIndex].name,
@@ -239,10 +254,10 @@ const mangaApi = (router: Router) => {
                         genres: manga.genres,
                         translators: translators,
                         preview: Storage.getPreview(PreviewType.Manga, manga.preview),
-                        description: manga.description
+                        description: manga.descriptions[descriptionIndex].text
                     });
                 } else res.send({
-                    name: manga.names[0].name,
+                    name: manga.names[localeIndex].name,
                     status: manga.state,
                     explicit: manga.explicit,
                     rating: {
@@ -255,7 +270,7 @@ const mangaApi = (router: Router) => {
                     genres: manga.genres,
                     translators: manga.translators,
                     preview: Storage.getPreview(PreviewType.Manga, manga.preview),
-                    description: manga.description
+                    description: manga.descriptions[descriptionIndex].text
                 });
             });
         });
@@ -313,7 +328,7 @@ const mangaApi = (router: Router) => {
                         teams.forEach(e => result.push({
                             id: e._id,
                             name: e.name,
-                            photo: Storage.getTeamPhoto(e.photo),
+                            photo: (e.photo === "empty") ? Storage.getEmptyTeamPhoto() : Storage.getTeamPhoto(e._id),
                             description: e.description
                         }));
 
@@ -325,15 +340,10 @@ const mangaApi = (router: Router) => {
 
     router.post("/teams/:teamId/manga/:mangaId/volumes/:volume/chapters/:chapter",
         jwtMiddleware,
-        roleMiddleware([
-            Role.Administrator,
-            Role.Moderator,
-            Role.Creator
-        ]),
         param("mangaId").isMongoId().exists(),
         param("teamId").isMongoId().exists(),
         param("volume").isNumeric().toInt(),
-        param("chapter").isNumeric().toInt(),
+        param("chapter").isNumeric({ no_symbols: true }).toFloat(),
         // Данные главы
         query("name").isString().exists(),
         validationMiddleware,
@@ -342,10 +352,13 @@ const mangaApi = (router: Router) => {
             Manga.findOne({
                 _id: req.params.mangaId
             }).then(manga => {
-                if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
 
                 Team.findById(req.params.teamId).then(team => {
                     if (team == null) return res.status(404).send(new NotFoundError("Team not found."));
+
+                    if (team.owner.toHexString() != req.jwt.userId && !team.members.includes(req.jwt.userId as any))
+                        return res.status(403).send(new ForbiddenError("Access denied"));
 
                     const c = (callback: (context: {
                         zip: StreamZip,
@@ -387,14 +400,21 @@ const mangaApi = (router: Router) => {
                                 if (!fs.existsSync(p)) mkdirp.sync(p);
 
                                 zip.extract(null, p, err => {
-                                    if (err) {
-                                        return;
-                                    }
+                                    if (err) return;
 
-                                    callback({
+                                    if (!manga.translators.includes(team._id)) {
+                                        manga.translators.push(team._id);
+                                        manga.save().then(() => {
+                                            callback({
+                                                zip: new Proxy(zip, {}),
+                                                zipPath: req.file.path,
+                                                pages: pages
+                                            });
+                                        });
+                                    } else callback({
                                         zip: new Proxy(zip, {}),
                                         zipPath: req.file.path,
-                                        pages
+                                        pages: pages
                                     });
                                 });
                             }
@@ -407,18 +427,17 @@ const mangaApi = (router: Router) => {
                         number: req.params.volume,
                     }).then(volume => {
                         if (volume == null) {
-                            if (req.file == null) {
-                                return;
-                            }
+                            if (req.file == null) return;
 
                             c(({
-                                   pages,
-                                   zip,
-                                   zipPath
-                               }) => {
+                               pages,
+                               zip,
+                               zipPath
+                            }) => {
                                 new Volume({
                                     number: req.params.volume,
                                     mangaId: manga._id,
+                                    teamId: team._id,
                                     chapters: [
                                         {
                                             number: req.params.chapter,
@@ -435,22 +454,28 @@ const mangaApi = (router: Router) => {
                             });
                         } else {
                             c(({
-                                   pages,
-                                   zip,
-                                   zipPath
-                               }) => {
-                                volume.chapters.push({
-                                    number: req.params.chapter,
-                                    name: req.query.name,
-                                    pages: pages
-                                });
+                               pages,
+                               zip,
+                               zipPath
+                            }) => {
+                                const chapterIndex = volume.chapters.findIndex(e => e.number === req.params.chapter);
 
-                                volume.save().then(() => {
-                                    res.status(204).send();
+                                if (chapterIndex === -1) {
+                                    volume.chapters.push({
+                                        number: req.params.chapter,
+                                        name: req.query.name,
+                                        pages: pages
+                                    });
 
-                                    zip.close();
-                                    fs.unlinkSync(zipPath);
-                                });
+                                    TimSort.sort(volume.chapters, (a, b) => (a.number - b.number));
+
+                                    volume.save().then(() => {
+                                        res.status(204).send();
+
+                                        zip.close();
+                                        fs.unlinkSync(zipPath);
+                                    });
+                                } else res.status(400).send(new BadRequestError("Chapter already exists"));
                             });
                         }
                     });
@@ -483,7 +508,6 @@ const mangaApi = (router: Router) => {
                         if (chapter == null) return res.status(404).send(new NotFoundError("Chapter not found"));
 
                         let pages: Array<string> = [];
-
                         chapter.pages.forEach(e => pages.push(Storage.getChapterPage(team._id, manga._id, vol.number, chapter.number, e)));
 
                         res.send({
@@ -495,51 +519,147 @@ const mangaApi = (router: Router) => {
             });
         });
 
+    router.post("/teams/:teamId/manga/:mangaId/volumes/:volume/preview",
+        jwtMiddleware,
+        param("mangaId").isMongoId().exists(),
+        param("teamId").isMongoId().exists(),
+        param("volume").isNumeric().toInt(),
+        validationMiddleware,
+        uploader.single("preview"),
+        async (req, res) => {
+            Team.findById(req.params.teamId).then(team => {
+                if (team == null) return res.status(404).send(new NotFoundError("Team not found."));
+
+                if (team.owner.toHexString() != req.jwt.userId && !team.members.includes(req.jwt.userId as any))
+                    return res.status(403).send(new ForbiddenError("Access denied."));
+
+                Manga.findById(req.params.mangaId).then(manga => {
+                    if (manga == null) return res.status(404).send(new NotFoundError("Manga not found."));
+
+                    Volume.findOne({
+                        teamId: team._id,
+                        mangaId: manga._id,
+                        number: req.params.volume
+                    }).then(volume => {
+                        if (volume == null) {
+                            res.status(404).send(new NotFoundError("Volume not found."));
+                            fs.unlinkSync(req.file.path);
+                            return;
+                        }
+
+                        if (req.file != null) {
+                            sharp(req.file.path).jpeg().toFile(path.join(process.cwd(), `/storage/team/${team._id}/manga/${manga._id}/${req.params.volume}/preview.jpg`)).then(() => {
+                                fs.unlinkSync(req.file.path);
+
+                                const sendRequest = () => {
+                                    res.send({
+                                        url: Storage.getVolumePreview(team._id, manga._id, volume.number)
+                                    });
+                                };
+
+                                if (!volume.hasPreview) {
+                                    volume.hasPreview = true;
+                                    volume.save().then(() => sendRequest());
+                                } else sendRequest();
+                            });
+                        } else res.status(400).send(new BadRequestError("preview must be defined"));
+                    })
+                });
+            });
+        });
+
+    router.get("/teams/:teamId/manga/:mangaId/volumes/:volume",
+        param("teamId").isMongoId(),
+        param("mangaId").isMongoId(),
+        param("volume").isNumeric().toInt(),
+        // Дополнительные парметры
+        query("extended").isBoolean().toBoolean().optional(),
+        validationMiddleware,
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+               if (manga == null) return res.status(404).send(new NotFoundError("Manga not found."));
+
+               Team.findById(req.params.teamId).then(team => {
+                   if (team == null) return res.status(404).send(new NotFoundError("Team not found."));
+
+                   Volume.findOne({
+                       teamId: team._id,
+                       mangaId: manga._id,
+                       number: req.params.volume
+                   }).then(volume => {
+                       if (volume == null) return res.status(404).send(new NotFoundError("Volume not found."));
+
+                       const extended = req.query.extended || false;
+
+                       if (extended) {
+                           res.send({
+                               id: volume.number,
+                               preview: volume.hasPreview ? Storage.getVolumePreview(team._id, manga._id, volume.number) : Storage.getEmptyPreview(),
+                               chapters: volume.chapters.map(e => {
+                                   return {
+                                       id: e.number,
+                                       name: e.name
+                                   };
+                               })
+                           });
+                       } else res.send({
+                           id: volume.number,
+                           preview: volume.hasPreview ? Storage.getVolumePreview(team._id, manga._id, volume.number) : Storage.getEmptyPreview()
+                       });
+                   });
+               });
+            });
+        });
+
     router.get("/teams/:teamId/manga/:mangaId/volumes",
         param("mangaId").isMongoId().exists(),
         param("teamId").isMongoId().exists(),
         query("extended").isBoolean().toBoolean().optional(),
         validationMiddleware,
         async (req, res) => {
-            Manga.findById(req.params.mangaId).then(manga => {
-                if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
+            Team.findById(req.params.teamId).then(team => {
+                if (team == null) return res.status(404).send(new NotFoundError("Team not found"));
 
-                Volume.find({
-                    mangaId: manga._id,
-                    teamId: req.params.teamId
-                }).sort({ number: -1 }).then(volumes => {
-                    const extended = req.query.extended || false;
+                Manga.findById(req.params.mangaId).then(manga => {
+                    if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
-                    let result: Array<{
-                        id: number;
-                        preview: string;
-                        chapters?: Array<{
+                    Volume.find({
+                        mangaId: manga._id,
+                        teamId: req.params.teamId
+                    }).sort({ number: -1 }).then(volumes => {
+                        const extended = req.query.extended || false;
+
+                        let result: Array<{
                             id: number;
-                            name: string;
-                        }>;
-                    }> = [];
+                            preview: string;
+                            chapters?: Array<{
+                                id: number;
+                                name: string;
+                            }>;
+                        }> = [];
 
-                    const callback = extended ? e => {
-                        result.push({
-                            id: e.number,
-                            preview: e.preview,
-                            chapters: e.chapters.map(c => {
-                                return {
-                                    id: c.number,
-                                    name: c.name
-                                };
-                            })
-                        });
-                    } : e => {
-                        result.push({
-                            id: e.number,
-                            preview: e.preview
-                        });
-                    };
+                        const callback = extended ? e => {
+                            result.push({
+                                id: e.number,
+                                preview: e.hasPreview ? Storage.getVolumePreview(team._id, manga._id, e.number) : Storage.getEmptyPreview(),
+                                chapters: e.chapters.map(c => {
+                                    return {
+                                        id: c.number,
+                                        name: c.name
+                                    };
+                                })
+                            });
+                        } : e => {
+                            result.push({
+                                id: e.number,
+                                preview: e.hasPreview ? Storage.getVolumePreview(team._id, manga._id, e.number) : Storage.getEmptyPreview()
+                            });
+                        };
 
-                    volumes.forEach(callback);
+                        volumes.forEach(callback);
 
-                    res.send(result);
+                        res.send(result);
+                    });
                 });
             });
         });
@@ -600,14 +720,16 @@ const mangaApi = (router: Router) => {
                         }> = [];
 
                         manga.forEach(e => {
-                            let locale = e.names.find(l => l.locale === req.query.locale);
+                            let localeIndex = e.names.findIndex(l => l.locale === req.query.locale);
+                            if (localeIndex === -1) localeIndex = 0;
 
-                            if (locale == null) locale = e.names[0];
+                            let descriptionIndex = e.descriptions.findIndex(l => l.locale === req.query.locale);
+                            if (descriptionIndex === -1) descriptionIndex = 0;
 
                             result.push({
                                 id: e._id,
-                                name: locale.name,
-                                description: e.description,
+                                name: e.names[localeIndex].name,
+                                description: e.descriptions[descriptionIndex].text,
                                 rating: {
                                     total: e.rating.total,
                                     reviews: e.rating.reviews.length

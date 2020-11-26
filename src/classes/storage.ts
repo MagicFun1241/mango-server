@@ -22,11 +22,19 @@ export default class Storage {
         return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/team/${id}/photo.jpg`;
     }
 
+    static getEmptyTeamPhoto() {
+        return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/team/empty.jpg`;
+    }
+
     static getCharacterPhoto(id: string) {
         return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/character/${id}.jpg`;
     }
 
     static getChapterPage(teamId: string, mangaId: string, volume: number, chapter: number, file: string) {
         return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/team/${teamId}/manga/${mangaId}/${volume}/${chapter}/${file}`;
+    }
+
+    static getVolumePreview(teamId: string, mangaId: string, volume: number) {
+        return `${isDevelopment ? config.env.development.host : config.env.production.host}/storage/team/${teamId}/manga/${mangaId}/${volume}/preview.jpg`;
     }
 }

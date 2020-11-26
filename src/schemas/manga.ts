@@ -92,7 +92,13 @@ const MangaSchema = createSchema({
     })),
     released: Type.number({ default: null }),
     preview: Type.string({ default: Storage.getEmptyPreview() }),
-    description: Type.string({ default: "No" })
+    descriptions: Type.array({ default: [] }).of({
+        locale: Type.string({
+            required: true,
+            enum: supportedLocales
+        }),
+        text: Type.string({ required: true })
+    })
 });
 
 export default typedModel("manga", MangaSchema);

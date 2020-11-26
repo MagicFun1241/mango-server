@@ -1,8 +1,8 @@
 {
   "env": {
     "production": {
-      "mongodbUrl": "mongodb://manga:6~6zVDh]<jM-B5Kw@localhost:27017/manga?authSource=admin&w=1",
-      "host": "https://manga.mfsoftware.site"
+      "mongodbUrl": "mongodb://localhost:27017/manga",
+      "host": "https://mango.magicfun.keenetic.pro"
     },
     "development": {
       "mongodbUrl": "mongodb://localhost:27017/manga",
