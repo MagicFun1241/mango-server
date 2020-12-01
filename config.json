@@ -6,7 +6,7 @@
     },
     "development": {
       "mongodbUrl": "mongodb://localhost:27017/manga",
-      "host": "http://10.0.2.2:3200"
+      "host": "https://mango.magicfun.keenetic.pro"
     }
   },
   "secrets": {
