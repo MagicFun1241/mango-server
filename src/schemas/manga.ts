@@ -2,6 +2,7 @@ import {createSchema, Type, typedModel} from "ts-mongoose";
 import {supportedLocales} from "../modules/locale";
 
 import Storage from "../classes/storage";
+import {Types} from "mongoose";
 
 export enum MangaState {
     Ongoing = "ongoing",
@@ -49,12 +50,6 @@ export function validateGenres(input: Array<any>) {
     return true;
 }
 
-export interface MangaInterface {
-    name: string;
-    preview?: string;
-    description: string;
-}
-
 const MangaSchema = createSchema({
     names: Type.array({ required: true }).of({
         locale: Type.string({
@@ -91,6 +86,7 @@ const MangaSchema = createSchema({
         enum: Genres
     })),
     released: Type.number({ default: null }),
+    views: Type.number({ default: 0 }),
     preview: Type.string({ default: Storage.getEmptyPreview() }),
     descriptions: Type.array({ default: [] }).of({
         locale: Type.string({
@@ -100,5 +96,27 @@ const MangaSchema = createSchema({
         text: Type.string({ required: true })
     })
 });
+
+export interface MangaInterface {
+    names: Array<{
+        locale: string;
+        name: string;
+    }>;
+    explicit: boolean;
+    released: number;
+    preview?: string;
+    state: MangaState;
+    translators: Array<Types.ObjectId>;
+    genres: Array<MangaGenre>;
+    rating: {
+        total: number;
+        reviews: Array<any>;
+    },
+    descriptions: Array<{
+        locale: string;
+        text: string;
+    }>;
+    characters: Array<Types.ObjectId>;
+}
 
 export default typedModel("manga", MangaSchema);

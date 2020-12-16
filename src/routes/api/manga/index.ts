@@ -6,7 +6,7 @@ import * as mkdirp from "mkdirp";
 import {Router} from "express";
 import Volume from "../../../schemas/volume";
 import Character from "../../../schemas/character";
-import Manga, {MangaState, validateGenres} from "../../../schemas/manga";
+import Manga, {MangaInterface, MangaState, validateGenres} from "../../../schemas/manga";
 import {Role} from "../../../schemas/user";
 
 import {param, query} from "express-validator";
@@ -19,6 +19,8 @@ import localeMiddleware from "../../../modules/locale";
 import roleMiddleware from "../../../modules/role";
 import jwtMiddleware from "../../../modules/jwt";
 
+import * as Reviews from '../../../stores/reviews';
+
 import {BadRequestError, ForbiddenError, NotFoundError} from "ts-http-errors";
 import Storage, {PreviewType} from "../../../classes/storage";
 import Team, {TeamInterface} from "../../../schemas/team";
@@ -26,6 +28,7 @@ import StreamZip = require("node-stream-zip");
 import TimSort = require("timsort");
 
 import buildFullTextRegex from "../../../modules/search";
+import MangaResolver from "../../../resolvers/manga";
 
 const mangaApi = (router: Router) => {
     router.post("/manga", jwtMiddleware, roleMiddleware([
@@ -185,7 +188,7 @@ const mangaApi = (router: Router) => {
         validationMiddleware,
         localeMiddleware,
         async (req, res) => {
-            Manga.findById(req.params.id).then(async manga => {
+            MangaResolver.findById<MangaInterface>(req.params.id).then(async manga => {
                 if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
                 const extended = req.query.extended || false;
@@ -338,6 +341,32 @@ const mangaApi = (router: Router) => {
             });
         });
 
+    router.get("/manga/:mangaId/reviews",
+        param("mangaId").isMongoId().exists(),
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
+
+                Reviews.get(manga._id, 5).then(reviews => {
+                   res.send(reviews);
+                });
+            });
+        });
+
+    router.post("/manga/:mangaId/reviews",
+        jwtMiddleware,
+        param("mangaId").isMongoId().exists(),
+        validationMiddleware,
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
+
+                Reviews.get(manga._id, 5).then(reviews => {
+                    res.send(reviews);
+                });
+            });
+        });
+
     router.post("/teams/:teamId/manga/:mangaId/volumes/:volume/chapters/:chapter",
         jwtMiddleware,
         param("mangaId").isMongoId().exists(),
@@ -349,9 +378,7 @@ const mangaApi = (router: Router) => {
         validationMiddleware,
         uploader.single("file"),
         async (req, res) => {
-            Manga.findOne({
-                _id: req.params.mangaId
-            }).then(manga => {
+            Manga.findById(req.params.mangaId).then(manga => {
                 if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
 
                 Team.findById(req.params.teamId).then(team => {

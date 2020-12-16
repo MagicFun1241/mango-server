@@ -1,14 +1,7 @@
-import Resolver, {Test} from "../classes/resolver";
-
 import TeamModel, {TeamInterface} from "../schemas/team";
 
-@Test
-export default class Team extends Resolver<TeamInterface>{
-    constructor() {
-        super(TeamModel);
-    }
+import createResolver from "../modules/resolver";
 
-    static a() {
-        
-    }
-}
+const TeamResolver = createResolver<TeamInterface>(TeamModel, 2 * 60);
+
+export default TeamResolver;

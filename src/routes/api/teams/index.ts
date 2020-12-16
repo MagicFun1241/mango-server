@@ -9,7 +9,8 @@ import {
     NotFoundError
 } from "ts-http-errors";
 
-import Team from "../../../schemas/team";
+import Team, {TeamInterface} from "../../../schemas/team";
+import TeamResolver from "../../../resolvers/team";
 
 import config from "../../../classes/config";
 import uploader from "../../../modules/uploader";
@@ -18,6 +19,7 @@ import jwtMiddleware from "../../../modules/jwt";
 
 const teamsApi = (router: Router) => {
     router.post("/teams",
+        jwtMiddleware,
         uploader.single("photo"),
         async (req, res) => {
             const create = (data) => {
@@ -56,7 +58,7 @@ const teamsApi = (router: Router) => {
         });
 
     router.get("/teams/:id", async (req, res) => {
-        Team.findById(req.params.id).then(team => {
+        TeamResolver.findById<TeamInterface>(req.params.id).then(team => {
             if (team == null) res.status(404).send(new NotFoundError("Team not found"));
             else res.send({
                 name: team.name,
@@ -68,12 +70,13 @@ const teamsApi = (router: Router) => {
     router.delete("/teams/:id",
         jwtMiddleware,
         async (req, res) => {
-        Team.findById(req.params.id).then(team => {
+        TeamResolver.findById<TeamInterface>(req.params.id).then(team => {
             if (team == null) res.status(404).send(new NotFoundError("Team not found"));
+            // @ts-ignore
             else if (team.owner.toHexString() !== req.jwt.userId) res.status(400).send(new BadRequestError("Access denied"));
             else team.remove().then(() => {
-                    res.status(204).send();
-                });
+                res.status(204).send();
+            });
         });
     });
 };

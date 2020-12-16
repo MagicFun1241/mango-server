@@ -10,7 +10,7 @@ import {
 } from "ts-http-errors";
 
 import {Role} from "../../../schemas/user";
-import News from "../../../schemas/news";
+import News, {NewsInterface} from "../../../schemas/news";
 import Storage, {PreviewType} from "../../../classes/storage";
 
 import validationMiddleware from "../../../modules/validation";
@@ -20,6 +20,7 @@ import roleMiddleware from "../../../modules/role";
 import {query} from "express-validator";
 
 import uploader from "../../../modules/uploader";
+import NewsResolver from "../../../resolvers/news";
 
 const newsApi = (router: Router) => {
     router.post("/news",
@@ -71,7 +72,7 @@ const newsApi = (router: Router) => {
     });
 
     router.get("/news/:id", async (req, res) => {
-        News.findById(req.params.id).then(news => {
+        NewsResolver.findById<NewsInterface>(req.params.id).then(news => {
             if (news == null) return res.status(404).send(new NotFoundError("News not found"));
 
             res.send({

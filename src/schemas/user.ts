@@ -27,8 +27,14 @@ const UserSchema = createSchema({
     firstName: Type.string({ required: true }),
     lastName: Type.string({ required: true }),
 
-    email: Type.string({ required: true }),
-    userName: Type.string({ required: true }),
+    email: Type.string({
+        required: true,
+        index: true
+    }),
+    userName: Type.string({
+        required: true,
+        index: true
+    }),
     password: Type.string({ required: true }),
 
     role: Type.number({ default: Role.User }),

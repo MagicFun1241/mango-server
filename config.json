@@ -9,6 +9,9 @@
       "host": "https://mango.magicfun.keenetic.pro"
     }
   },
+  "limits": {
+    "maxTeamsCount": 2
+  },
   "secrets": {
     "jwt": "test"
   }
