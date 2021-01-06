@@ -22,6 +22,7 @@
     "express-validator": "^6.6.1",
     "geoip-lite": "^1.4.2",
     "helmet": "^4.1.0",
+    "level": "^6.0.1",
     "mkdirp": "^1.0.4",
     "mongoose": "^5.10.4",
     "morgan-body": "^2.5.1",

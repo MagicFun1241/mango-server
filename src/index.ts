@@ -12,6 +12,7 @@ import Logger from "./classes/logger";
 
 import apiRouter from "./routes/api";
 import config, {isDevelopment} from "./classes/config";
+import lists from "./stores/lists";
 
 declare global {
     interface Array<T> {

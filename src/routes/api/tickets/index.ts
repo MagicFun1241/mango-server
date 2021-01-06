@@ -4,8 +4,10 @@ import {NotFoundError} from "ts-http-errors";
 
 import Ticket from "../../../schemas/ticket";
 
-import jwtMiddleware from "../../../modules/jwt";
 import roleMiddleware from "../../../modules/role";
+import {
+    jwtMiddleware
+} from "../../../modules/jwt";
 
 const ticketsApi = (router: Router) => {
     router.get("/tickets/:id",

@@ -17,9 +17,12 @@ import uploader from "../../../modules/uploader";
 import validationMiddleware from "../../../modules/validation";
 import localeMiddleware from "../../../modules/locale";
 import roleMiddleware from "../../../modules/role";
-import jwtMiddleware from "../../../modules/jwt";
+import {
+    jwtMiddleware,
+    optionalJwtMiddleware
+} from "../../../modules/jwt";
 
-import * as Reviews from '../../../stores/reviews';
+import Reviews from '../../../stores/reviews';
 
 import {BadRequestError, ForbiddenError, NotFoundError} from "ts-http-errors";
 import Storage, {PreviewType} from "../../../classes/storage";
@@ -27,8 +30,21 @@ import Team, {TeamInterface} from "../../../schemas/team";
 import StreamZip = require("node-stream-zip");
 import TimSort = require("timsort");
 
-import buildFullTextRegex from "../../../modules/search";
 import MangaResolver from "../../../resolvers/manga";
+import TeamResolver from "../../../resolvers/team";
+
+import buildFullTextRegex from "../../../modules/search";
+import lists, {ListName} from "../../../stores/lists";
+
+function searchList(userId: string, mangaId: string) {
+    return new Promise<ListName>(resolve => {
+        lists.get(`${userId}_${mangaId}`).then(v => {
+            resolve(v as any);
+        }).catch(e => {
+            if (e.notFound) resolve(null);
+        });
+    })
+}
 
 const mangaApi = (router: Router) => {
     router.post("/manga", jwtMiddleware, roleMiddleware([
@@ -183,6 +199,7 @@ const mangaApi = (router: Router) => {
         });
 
     router.get("/manga/:id",
+        optionalJwtMiddleware,
         param("id").isString().isMongoId().exists(),
         query("extended").isBoolean().optional(),
         validationMiddleware,
@@ -192,6 +209,7 @@ const mangaApi = (router: Router) => {
                 if (manga == null) return res.status(404).send(new BadRequestError("Manga not found"));
 
                 const extended = req.query.extended || false;
+                const authorized = req.jwt != null;
 
                 let localeIndex = manga.names.findIndex(e => e.locale === req.query.locale);
                 if (localeIndex === -1) localeIndex = 0;
@@ -244,12 +262,18 @@ const mangaApi = (router: Router) => {
                             manga.names[localeIndex].name,
                             ...[...manga.names].remove(localeIndex).map(e => e.name)
                         ],
+                        list: authorized ? await (() => {
+                            return new Promise<string | null>(async resolve => {
+                                resolve(await searchList(req.jwt.userId, manga._id));
+                            });
+                        })() : undefined,
                         characters: characters,
                         status: manga.state,
                         explicit: manga.explicit,
                         rating: {
                             total: Math.round(manga.rating.total),
-                            reviews: manga.rating.reviews.length
+                            reviewsCount: manga.rating.reviews.length,
+                            correlation: []
                         },
                         release: {
                             date: manga.released
@@ -261,17 +285,24 @@ const mangaApi = (router: Router) => {
                     });
                 } else res.send({
                     name: manga.names[localeIndex].name,
+                    list: authorized ? await (() => {
+                        return new Promise<string | null>(async resolve => {
+                            resolve(await searchList(req.jwt.userId, manga._id));
+                        });
+                    })() : undefined,
                     status: manga.state,
                     explicit: manga.explicit,
                     rating: {
                         total: Math.round(manga.rating.total),
-                        reviews: manga.rating.reviews.length
+                        reviewsCount: manga.rating.reviews.length,
+                        correlation: [ 0.8, 0.1, 0.05, 0.03, 0.02 ]
                     },
                     release: {
                         date: manga.released
                     },
                     genres: manga.genres,
                     translators: manga.translators,
+                    characters: manga.characters,
                     preview: Storage.getPreview(PreviewType.Manga, manga.preview),
                     description: manga.descriptions[descriptionIndex].text
                 });
@@ -343,11 +374,19 @@ const mangaApi = (router: Router) => {
 
     router.get("/manga/:mangaId/reviews",
         param("mangaId").isMongoId().exists(),
+        query("count").isNumeric().toInt(),
+        validationMiddleware,
         async (req, res) => {
             Manga.findById(req.params.mangaId).then(manga => {
                 if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
 
-                Reviews.get(manga._id, 5).then(reviews => {
+                let count = 5;
+
+                if (req.query.count && req.query.count < 20) {
+                    count = req.query.count;
+                } else res.status(400).send(new BadRequestError("count can't be greater than 20"));
+
+                Reviews.getLast(manga._id, count).then(reviews => {
                    res.send(reviews);
                 });
             });
@@ -361,8 +400,33 @@ const mangaApi = (router: Router) => {
             Manga.findById(req.params.mangaId).then(manga => {
                 if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
 
-                Reviews.get(manga._id, 5).then(reviews => {
-                    res.send(reviews);
+                Reviews.has(manga._id, req.jwt.userId).then(has => {
+                    if (has) return res.status(400).send(new BadRequestError("review already exist"));
+
+                    Reviews.insert(manga._id, {
+                        userId: req.jwt.userId,
+                        created: new Date().getTime()
+                    }).then(() => {
+                        res.status(204).send();
+                    });
+                });
+            });
+        });
+
+    router.delete("/manga/:mangaId/review",
+        jwtMiddleware,
+        param("mangaId").isMongoId().exists(),
+        validationMiddleware,
+        async (req, res) => {
+            Manga.findById(req.params.mangaId).then(manga => {
+                if (manga == null) return res.status(404).send(new NotFoundError("Manga not found"));
+
+                Reviews.has(manga._id, req.jwt.userId).then(has => {
+                   if (has) {
+                       Reviews.remove(manga._id, req.jwt.userId).then(() => {
+                          res.status(204).send();
+                       });
+                   } else res.status(400).send(new BadRequestError("Review does not exist"));
                 });
             });
         });
@@ -375,6 +439,8 @@ const mangaApi = (router: Router) => {
         param("chapter").isNumeric({ no_symbols: true }).toFloat(),
         // Данные главы
         query("name").isString().exists(),
+        query("season").isNumeric().toInt(),
+        query("series").isNumeric().toInt(),
         validationMiddleware,
         uploader.single("file"),
         async (req, res) => {
@@ -453,6 +519,8 @@ const mangaApi = (router: Router) => {
                         mangaId: manga._id,
                         number: req.params.volume,
                     }).then(volume => {
+                        const includesAdaptation = (req.query.series != null) && (req.query.season != null);
+
                         if (volume == null) {
                             if (req.file == null) return;
 
@@ -469,6 +537,10 @@ const mangaApi = (router: Router) => {
                                         {
                                             number: req.params.chapter,
                                             name: req.query.name,
+                                            adaptation: includesAdaptation ? {
+                                                season: req.query.season,
+                                                series: req.query.series
+                                            } : undefined,
                                             pages: pages
                                         }
                                     ]
@@ -491,6 +563,10 @@ const mangaApi = (router: Router) => {
                                     volume.chapters.push({
                                         number: req.params.chapter,
                                         name: req.query.name,
+                                        adaptation: includesAdaptation ? {
+                                            season: req.query.season,
+                                            series: req.query.series
+                                        } : undefined,
                                         pages: pages
                                     });
 
@@ -517,7 +593,7 @@ const mangaApi = (router: Router) => {
         param("chapter").isNumeric().toInt(),
         validationMiddleware,
         async (req, res) => {
-            Team.findById(req.params.teamId).then(team => {
+            TeamResolver.findById<TeamInterface>(req.params.teamId).then(team => {
                 if (team == null) return res.status(404).send(new NotFoundError("Team not found"));
 
                 Manga.findById(req.params.mangaId).then(manga => {
@@ -539,6 +615,7 @@ const mangaApi = (router: Router) => {
 
                         res.send({
                             name: chapter.name,
+                            adaptation: chapter.adaptation || undefined,
                             pages: pages
                         });
                     });

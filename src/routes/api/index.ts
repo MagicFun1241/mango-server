@@ -9,9 +9,11 @@ import ticketsApi from "./tickets";
 import newsApi from "./news";
 import teamsApi from "./teams";
 import charactersApi from "./characters";
+import listsApi from "./lists";
 
 const router = Router();
 
+listsApi(router);
 newsApi(router);
 usersApi(router);
 mangaApi(router);

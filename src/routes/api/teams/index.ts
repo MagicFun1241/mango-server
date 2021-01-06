@@ -15,7 +15,9 @@ import TeamResolver from "../../../resolvers/team";
 import config from "../../../classes/config";
 import uploader from "../../../modules/uploader";
 
-import jwtMiddleware from "../../../modules/jwt";
+import {
+    jwtMiddleware
+} from "../../../modules/jwt";
 
 const teamsApi = (router: Router) => {
     router.post("/teams",

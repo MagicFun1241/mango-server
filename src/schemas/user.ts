@@ -46,14 +46,14 @@ const UserSchema = createSchema({
 
     lists: Type.object({
         default: {
-            favorite: [],
-            reading: [],
-            readed: []
+            abandoned: [],
+            readed: [],
+            planing: []
         }
     }).of({
-        favorite: Type.array().of(Type.objectId()),
-        reading: Type.array().of(Type.objectId()),
-        readed: Type.array().of(Type.objectId())
+        abandoned: Type.array().of(Type.objectId()),
+        readed: Type.array().of(Type.objectId()),
+        planing: Type.array().of(Type.objectId())
     }),
     subscribers: Type.array({ default: [] }).of(Type.objectId())
 });

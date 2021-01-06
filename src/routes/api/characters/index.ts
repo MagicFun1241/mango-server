@@ -12,7 +12,9 @@ import Character from "../../../schemas/character";
 
 import {body, query} from "express-validator";
 
-import jwtMiddleware from "../../../modules/jwt";
+import {
+    jwtMiddleware
+} from "../../../modules/jwt";
 import roleMiddleware from "../../../modules/role";
 import localeMiddleware, {supportedLocales} from "../../../modules/locale";
 import validationMiddleware from "../../../modules/validation";

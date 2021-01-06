@@ -20,45 +20,53 @@ declare global {
     }
 }
 
-const jwtMiddleware = (request, response, next) => {
-    const authorization = request.headers["authorization"];
+const check = (request, response, next) => {
+    if (typeof request.headers["authorization"] !== "string") {
+        response.status(400).send(new BadRequestError("Authorization must be string"));
+        return;
+    }
 
-    if (authorization == null) response.status(401).send(new UnauthorizedError());
-    else {
-        if (typeof authorization !== "string") {
-            response.status(400).send(new BadRequestError("Authorization must be string"));
-            return;
-        }
+    const parts = request.headers["authorization"].split(" ");
 
-        const parts = authorization.split(" ");
+    if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") {
+        response.status(400).send(new BadRequestError("Authorization must be in format"));
+        return;
+    }
 
-        if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") {
-            response.status(400).send(new BadRequestError("Authorization must be in format"));
-            return;
-        }
+    try {
+        const user: TokenPayload = jwt.verify(parts[1], config.secrets.jwt) as any;
 
-        try {
-            const user: TokenPayload = jwt.verify(parts[1], config.secrets.jwt) as any;
+        User.findById(user.userId).then(usr => {
+            if (usr == null) {
+                next(new Error("User not found"));
+                return;
+            }
 
-            User.findById(user.userId).then(usr => {
-                if (usr == null) {
-                    next(new Error("User not found"));
-                    return;
-                }
+            if (usr.sessionId !== user.sessionId) {
+                next(new Error("Token is recalled"));
+                return;
+            }
 
-                if (usr.sessionId !== user.sessionId) {
-                    next(new Error("Token is recalled"));
-                    return;
-                }
+            request.jwt = user;
 
-                request.jwt = user;
-
-                next();
-            });
-        } catch (e) {
-            response.status(403).send(new ForbiddenError("Invalid token"));
-        }
+            next();
+        });
+    } catch (e) {
+        response.status(403).send(new ForbiddenError("Invalid token"));
     }
 }
 
-export default jwtMiddleware;
+const jwtMiddleware = (request, response, next) => {
+    if (request.headers["authorization"] == null) response.status(401).send(new UnauthorizedError());
+    else check(request, response, next);
+}
+
+const optionalJwtMiddleware = (request, response, next) => {
+    if (request.headers["authorization"] == null) next();
+    else check(request, response, next);
+};
+
+export {
+    jwtMiddleware,
+    optionalJwtMiddleware
+}

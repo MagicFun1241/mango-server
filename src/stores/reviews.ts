@@ -1,18 +1,27 @@
+import * as fs from 'fs';
 import * as path from "path";
 
 import * as NodeCache from "node-cache";
 
 import Datastore = require("nedb-promises");
 
-interface Review {
+import {
+    Types
+} from "mongoose";
 
+interface Review {
+    _id?: string;
+
+    userId: string;
+    created: number;
 }
 
 const cache = new NodeCache({
-    stdTTL: 2 * 60
+    stdTTL: 1 * 60
 });
 
 cache.on("expired", (key, value) => {
+    console.log("expired")
     stores.delete(key);
 });
 
@@ -20,9 +29,13 @@ const stores = new Map<string, Datastore>();
 
 function load(id: string): Promise<Datastore> {
     return new Promise<Datastore>((resolve) => {
+        const storesDir = path.join(process.cwd(), "storage", "stores");
+
+        if (!fs.existsSync(storesDir)) fs.mkdirSync(storesDir, { recursive: true });
+
         const proxy = new Proxy(Datastore.create({
             autoload: true,
-            filename: path.join(process.cwd(), "stores", id)
+            filename: path.join(storesDir, id)
         }), {});
 
         stores.set(id, proxy);
@@ -31,30 +44,71 @@ function load(id: string): Promise<Datastore> {
     });
 }
 
-export function get(id: string, count: number): Promise<Review[]> {
-    return new Promise<Review[]>((resolve) => {
-        if (stores.has(id)) {
-            stores.get(id).find({}).limit(count).then(reviews => {
-                resolve(reviews);
-            });
-        } else {
-            load(id).then(store => {
-                store.find({}).limit(count).then(reviews => {
+export default class ReviewsStorage {
+    static getLast(id: string | Types.ObjectId, count: number): Promise<Review[]> {
+        // @ts-ignore
+        const rid: string = (id instanceof Types.ObjectId) ? id.toString() : id;
+
+        return new Promise<Review[]>((resolve) => {
+            if (stores.has(rid)) {
+                stores.get(rid).find<Review>({}).limit(count).then(reviews => {
                     resolve(reviews);
                 });
-            });
-        }
-    });
-}
+            } else {
+                load(rid).then(store => {
+                    store.find<Review>({}).limit(count).then(reviews => {
+                        resolve(reviews);
+                    });
+                });
+            }
+        });
+    }
 
-export function insert(id: string, item: Review): Promise<void> {
-    return new Promise<void>((resolve) => {
-        if (stores.has(id)) {
-            stores.get(id).insert(item).then(() => resolve());
-        } else {
-            load(id).then(store => {
-                store.insert(item).then(() => resolve());
-            });
-        }
-    });
+    static has(mangaId: string | Types.ObjectId, userId: string): Promise<boolean> {
+        return new Promise<boolean>((resolve, _) => {
+            // @ts-ignore
+            const rid: string = (mangaId instanceof Types.ObjectId) ? mangaId.toString() : mangaId;
+
+            if (stores.has(rid)) {
+                stores.get(rid).findOne<Review>({ userId: userId }).then(d => resolve(d != null));
+            } else {
+                load(rid).then(store => {
+                    store.findOne<Review>({ userId: userId }).then(d => resolve(d != null));
+                });
+            }
+        });
+    }
+
+    static insert(mangaId: string | Types.ObjectId, item: Review): Promise<Review> {
+        return new Promise<Review>((resolve) => {
+            // @ts-ignore
+            const rid: string = (mangaId instanceof Types.ObjectId) ? mangaId.toString() : mangaId;
+
+            if (stores.has(rid)) {
+                stores.get(rid).insert(item).then(d => resolve(d));
+            } else {
+                load(rid).then(store => {
+                    store.insert(item).then(d => resolve(d));
+                });
+            }
+        });
+    }
+
+    static remove(mangaId: string | Types.ObjectId, userId: string | Types.ObjectId) {
+        return new Promise<void>((resolve) => {
+            // @ts-ignore
+            const rid: string = (mangaId instanceof Types.ObjectId) ? mangaId.toString() : mangaId;
+
+            // @ts-ignore
+            const uid: string = (userId instanceof Types.ObjectId) ? userId.toString() : userId;
+
+            if (stores.has(rid)) {
+                stores.get(rid).remove({ userId: uid }, {}).then(() => resolve());
+            } else {
+                load(rid).then(store => {
+                    store.remove({ userId: uid }, {}).then(() => resolve());
+                });
+            }
+        });
+    }
 }

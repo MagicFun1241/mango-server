@@ -14,8 +14,10 @@ import News, {NewsInterface} from "../../../schemas/news";
 import Storage, {PreviewType} from "../../../classes/storage";
 
 import validationMiddleware from "../../../modules/validation";
-import jwtMiddleware from "../../../modules/jwt";
 import roleMiddleware from "../../../modules/role";
+import {
+    jwtMiddleware
+} from "../../../modules/jwt";
 
 import {query} from "express-validator";
 

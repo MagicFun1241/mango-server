@@ -12,8 +12,10 @@ import Storage from "../../../classes/storage";
 
 import {body} from "express-validator";
 
-import jwtMiddleware from "../../../modules/jwt";
 import validationMiddleware from "../../../modules/validation";
+import {
+    jwtMiddleware
+} from "../../../modules/jwt";
 
 import {resolveLocale, supportedLocales} from "../../../modules/locale";
 
